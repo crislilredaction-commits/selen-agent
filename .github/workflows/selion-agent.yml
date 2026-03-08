@@ -8,6 +8,10 @@ on:
 jobs:
   run-agent:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NDA_CSV_URL: ${{ secrets.NDA_CSV_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -18,8 +22,10 @@ jobs:
 
       - run: npm install
 
+      - name: Debug env presence
+        run: |
+          echo "SUPABASE URL present: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' }}"
+          echo "SERVICE ROLE present: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
+          echo "CSV URL present: ${{ secrets.NDA_CSV_URL != '' }}"
+
       - run: npx tsx scripts/selen-agent.ts
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NDA_CSV_URL: ${{ secrets.NDA_CSV_URL }}
