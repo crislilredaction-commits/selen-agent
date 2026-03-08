@@ -78,6 +78,38 @@ function formatDate(value: string | null | undefined) {
   return new Date(value).toLocaleString();
 }
 
+function parseTallyResponses(data: any) {
+  if (!data?.data?.fields) return [];
+
+  const fields = data.data.fields;
+
+  const results = fields
+    .filter((f: any) => f.type !== "HIDDEN_FIELDS")
+    .map((field: any) => {
+      let answer = field.value;
+
+      if (Array.isArray(answer) && field.options) {
+        answer = answer
+          .map((id: string) => {
+            const option = field.options.find((o: any) => o.id === id);
+            return option?.text || id;
+          })
+          .join(", ");
+      }
+
+      if (Array.isArray(answer)) {
+        answer = answer.join(", ");
+      }
+
+      return {
+        question: field.label,
+        answer: answer || "—",
+      };
+    });
+
+  return results;
+}
+
 function cardTitle(title: string) {
   return (
     <h2 className="mb-4 text-base font-semibold uppercase tracking-wide text-amber-100">
@@ -619,7 +651,25 @@ export default function ProspectDetailClient({
             <p>Aucune réponse enregistrée pour le moment.</p>
           ) : (
             <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
-              {JSON.stringify(prospect.questionnaire_response_json, null, 2)}
+              {!prospect.questionnaire_response_json ? (
+                <p>Aucune réponse enregistrée pour le moment.</p>
+              ) : (
+                <div className="space-y-2">
+                  {parseTallyResponses(
+                    prospect.questionnaire_response_json,
+                  ).map((item, index) => (
+                    <div
+                      key={index}
+                      className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2"
+                    >
+                      <p className="text-amber-100 font-medium">
+                        {item.question}
+                      </p>
+                      <p className="text-amber-200/80">{item.answer}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </pre>
           )}
         </div>

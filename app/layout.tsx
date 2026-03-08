@@ -12,6 +12,14 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+export const metadata = {
+  title: "Selen",
+  description: "Selen Editions",
+  icons: {
+    icon: "/logo-selen.png",
+  },
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -19,7 +27,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" className={`${cinzel.variable} ${inter.variable}`}>
-      <body className="font-sans bg-[#1a1410]">{children}</body>
+      <body suppressHydrationWarning className="font-sans bg-[#1a1410]">
+        {children}
+      </body>
     </html>
   );
 }
