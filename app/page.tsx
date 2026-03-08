@@ -27,7 +27,7 @@ export default async function Home() {
   const { data: prospects, error: prospectsError } = await supabase
     .from("prospects")
     .select(
-      "id, organization_name, email, email_found, status, prospect_type, created_at",
+      "id, organization_name, email, email_found, status, prospect_type, first_email_status, created_at",
     )
     .order("created_at", { ascending: false });
 
@@ -53,7 +53,8 @@ export default async function Home() {
   const stats = {
     prospects: allProspects.length,
     contactable: contactableProspects.length,
-    contacted: allProspects.filter((p) => p.status === "contacted").length,
+    contacted: allProspects.filter((p) => p.first_email_status === "sent")
+      .length,
     replies: allProspects.filter((p) => p.status === "replied").length,
     qualified: allProspects.filter((p) => p.status === "qualified").length,
     meetings: allProspects.filter((p) => p.status === "meeting_booked").length,
@@ -62,21 +63,6 @@ export default async function Home() {
   };
 
   const recentProspects = contactableProspects.slice(0, 8);
-
-  const { data: sales } = await supabase
-    .from("meetings")
-    .select("id")
-    .eq("sale_status", "won");
-
-  const totalSales = sales?.length ?? 0;
-
-  const { data: revenueRows } = await supabase
-    .from("meetings")
-    .select("sale_amount")
-    .eq("sale_status", "won");
-
-  const totalRevenue =
-    revenueRows?.reduce((sum, row) => sum + (row.sale_amount || 0), 0) ?? 0;
 
   return (
     <main className="min-h-screen bg-[#1a1410] text-amber-50">
@@ -165,7 +151,13 @@ export default async function Home() {
                           {prospect.prospect_type === "no_nda" && "No NDA"}
                         </td>
                         <td className="px-4 py-3">
-                          <StatusBadge status={prospect.status} />
+                          <StatusBadge
+                            status={
+                              prospect.first_email_status === "sent"
+                                ? "email envoyé"
+                                : prospect.status
+                            }
+                          />
                         </td>
                       </tr>
                     ))}

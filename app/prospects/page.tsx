@@ -9,6 +9,14 @@ export default async function ProspectsPage() {
 
   return (
     <main className="min-h-screen bg-[#1a1410] p-8 text-amber-50">
+      <div className="mb-4">
+        <Link
+          href="/"
+          className="inline-block rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
+        >
+          ← Retour au dashboard
+        </Link>
+      </div>
       <h1 className="mb-6 text-3xl font-bold text-amber-100">
         Tous les prospects
       </h1>
@@ -53,7 +61,9 @@ export default async function ProspectsPage() {
                 </td>
 
                 <td className="px-4 py-3 text-amber-200/70">
-                  {prospect.workflow_status || "nouveau"}
+                  {prospect.first_email_status === "sent"
+                    ? "email envoyé"
+                    : prospect.workflow_status || "nouveau"}
                 </td>
 
                 <td className="px-4 py-3 text-amber-200/70">

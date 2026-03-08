@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -21,6 +22,11 @@ type Prospect = {
   preferred_contact_channel: string | null;
   internal_notes: string | null;
   created_at: string | null;
+  first_email_status: string | null;
+  first_outreach_sent_at: string | null;
+  questionnaire_status: string | null;
+  questionnaire_response_json: any;
+  questionnaire_completed_at: string | null;
 };
 
 type ProspectMessage = {
@@ -287,6 +293,21 @@ export default function ProspectDetailClient({
 
   return (
     <main className="min-h-screen bg-[#1a1410] p-6 text-amber-50">
+      <div className="mb-4 flex gap-3">
+        <Link
+          href="/"
+          className="inline-block rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
+        >
+          ← Dashboard
+        </Link>
+
+        <Link
+          href="/prospects"
+          className="inline-block rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
+        >
+          ← Liste prospects
+        </Link>
+      </div>
       <h1 className="mb-4 text-2xl font-bold text-amber-100">
         {form.organization_name || "Prospect"}
       </h1>
@@ -400,6 +421,19 @@ export default function ProspectDetailClient({
               <option value="phone">Téléphone</option>
               <option value="none">Aucun</option>
             </select>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+              <strong>Premier email :</strong>{" "}
+              {prospect.first_email_status === "sent" ? "envoyé" : "non envoyé"}
+            </div>
+
+            <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+              <strong>Date envoi :</strong>{" "}
+              {prospect.first_outreach_sent_at
+                ? new Date(prospect.first_outreach_sent_at).toLocaleString()
+                : "—"}
+            </div>
           </div>
 
           <textarea
@@ -560,6 +594,34 @@ export default function ProspectDetailClient({
               </div>
             )}
           </div>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
+        {cardTitle("Questionnaire")}
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+            <strong>Statut :</strong>{" "}
+            {prospect.questionnaire_status || "non envoyé"}
+          </div>
+
+          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+            <strong>Date de réponse :</strong>{" "}
+            {prospect.questionnaire_completed_at
+              ? new Date(prospect.questionnaire_completed_at).toLocaleString()
+              : "—"}
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] p-3 text-sm text-amber-200/80">
+          {!prospect.questionnaire_response_json ? (
+            <p>Aucune réponse enregistrée pour le moment.</p>
+          ) : (
+            <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
+              {JSON.stringify(prospect.questionnaire_response_json, null, 2)}
+            </pre>
+          )}
         </div>
       </section>
 

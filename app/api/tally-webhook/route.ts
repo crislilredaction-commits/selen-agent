@@ -23,10 +23,14 @@ export async function POST(req: Request) {
 
     console.log("TALLY WEBHOOK BODY =", JSON.stringify(body, null, 2));
 
-    const prospectId =
-      body?.hidden?.prospect_id ||
-      body?.fields?.find((f: any) => f.key === "prospect_id")?.value ||
-      null;
+    const fields = body?.data?.fields ?? [];
+
+    const prospectField = fields.find(
+      (field: any) =>
+        field.label === "prospect_id" || field.key === "prospect_id",
+    );
+
+    const prospectId = prospectField?.value ?? null;
 
     if (!prospectId) {
       return NextResponse.json(
@@ -41,6 +45,7 @@ export async function POST(req: Request) {
         questionnaire_status: "completed",
         questionnaire_response_json: body,
         questionnaire_completed_at: new Date().toISOString(),
+        workflow_status: "questionnaire_completed",
       })
       .eq("id", prospectId);
 
