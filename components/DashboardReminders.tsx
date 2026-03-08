@@ -11,9 +11,7 @@ type Reminder = {
   remind_at: string;
   status: string;
   prospect_id: string;
-  prospects: {
-    organization_name: string | null;
-  } | null;
+  prospects: { organization_name: string | null }[] | null;
 };
 
 export default function DashboardReminders() {
@@ -40,10 +38,13 @@ export default function DashboardReminders() {
       .order("remind_at", { ascending: true })
       .limit(20);
 
-    if (!error && data) {
-      setReminders(data as Reminder[]);
+    if (error) {
+      console.error("Erreur chargement rappels :", error.message);
+      setLoading(false);
+      return;
     }
 
+    setReminders((data ?? []) as Reminder[]);
     setLoading(false);
   }
 
@@ -52,10 +53,15 @@ export default function DashboardReminders() {
   }, []);
 
   async function markDone(id: string) {
-    await supabase
+    const { error } = await supabase
       .from("prospect_reminders")
       .update({ status: "done" })
       .eq("id", id);
+
+    if (error) {
+      console.error("Erreur mise à jour rappel :", error.message);
+      return;
+    }
 
     setReminders((prev) => prev.filter((r) => r.id !== id));
   }
@@ -78,42 +84,47 @@ export default function DashboardReminders() {
         <p className="text-sm text-amber-200/70">Aucun rappel en attente.</p>
       ) : (
         <div className="space-y-3">
-          {reminders.map((r) => (
-            <div
-              key={r.id}
-              className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-4 text-sm"
-            >
-              <div className="flex justify-between items-start gap-4">
-                <div>
-                  <p className="font-semibold text-amber-100">{r.title}</p>
+          {reminders.map((r) => {
+            const organizationName =
+              r.prospects?.[0]?.organization_name ?? "Prospect";
 
-                  <p className="text-amber-200/80">
-                    {r.prospects?.organization_name ?? "Prospect"}
-                  </p>
+            return (
+              <div
+                key={r.id}
+                className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-4 text-sm"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-amber-100">{r.title}</p>
 
-                  <p className="text-xs text-amber-200/60">
-                    {new Date(r.remind_at).toLocaleString()}
-                  </p>
+                    <p className="text-amber-200/80">{organizationName}</p>
 
-                  {r.note && <p className="mt-2 text-amber-200/70">{r.note}</p>}
+                    <p className="text-xs text-amber-200/60">
+                      {new Date(r.remind_at).toLocaleString()}
+                    </p>
 
-                  <Link
-                    href={`/prospects/${r.prospect_id}`}
-                    className="mt-2 inline-block text-xs text-amber-400 underline"
+                    {r.note && (
+                      <p className="mt-2 text-amber-200/70">{r.note}</p>
+                    )}
+
+                    <Link
+                      href={`/prospects/${r.prospect_id}`}
+                      className="mt-2 inline-block text-xs text-amber-400 underline"
+                    >
+                      Voir la fiche prospect
+                    </Link>
+                  </div>
+
+                  <button
+                    onClick={() => markDone(r.id)}
+                    className="rounded-lg bg-green-700 px-3 py-1 text-xs text-white hover:bg-green-600"
                   >
-                    Voir la fiche prospect
-                  </Link>
+                    Fait
+                  </button>
                 </div>
-
-                <button
-                  onClick={() => markDone(r.id)}
-                  className="rounded-lg bg-green-700 px-3 py-1 text-xs text-white hover:bg-green-600"
-                >
-                  Fait
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
