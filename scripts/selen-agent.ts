@@ -21,7 +21,7 @@ function runScript(script: string): Promise<void> {
   return new Promise((resolve, reject) => {
     console.log(`\n--- Lancement ${script} ---`);
 
-    exec(`npx ts-node scripts/${script}`, (error, stdout, stderr) => {
+    exec(`npx tsx scripts/${script}`, (error, stdout, stderr) => {
       if (stdout) console.log(stdout);
       if (stderr) console.error(stderr);
 
