@@ -1,6 +1,8 @@
 import SelionCompanion from "../components/SelionCompanion";
-import { supabase } from "../lib/supabaseClient";
 import MeetingsSalesManager from "../components/MeetingsSalesManager";
+import DashboardReminders from "../components/DashboardReminders";
+import { supabase } from "../lib/supabaseClient";
+import Link from "next/link";
 
 function StatCard({ title, value }: { title: string; value: string | number }) {
   return (
@@ -24,7 +26,9 @@ function StatusBadge({ status }: { status: string | null }) {
 export default async function Home() {
   const { data: prospects, error: prospectsError } = await supabase
     .from("prospects")
-    .select("id, organization_name, email, status, created_at")
+    .select(
+      "id, organization_name, email, email_found, status, prospect_type, created_at",
+    )
     .order("created_at", { ascending: false });
 
   const { data: meetings, error: meetingsError } = await supabase
@@ -34,6 +38,12 @@ export default async function Home() {
   const allProspects = prospects ?? [];
   const allMeetings = meetings ?? [];
 
+  const contactableProspects = allProspects.filter(
+    (p) =>
+      (p.email_found && p.email_found.trim() !== "") ||
+      (p.email && p.email.trim() !== ""),
+  );
+
   const salesWon = allMeetings.filter((m) => m.sale_status === "won").length;
 
   const revenue = allMeetings
@@ -42,6 +52,7 @@ export default async function Home() {
 
   const stats = {
     prospects: allProspects.length,
+    contactable: contactableProspects.length,
     contacted: allProspects.filter((p) => p.status === "contacted").length,
     replies: allProspects.filter((p) => p.status === "replied").length,
     qualified: allProspects.filter((p) => p.status === "qualified").length,
@@ -50,7 +61,22 @@ export default async function Home() {
     revenue,
   };
 
-  const recentProspects = allProspects.slice(0, 8);
+  const recentProspects = contactableProspects.slice(0, 8);
+
+  const { data: sales } = await supabase
+    .from("meetings")
+    .select("id")
+    .eq("sale_status", "won");
+
+  const totalSales = sales?.length ?? 0;
+
+  const { data: revenueRows } = await supabase
+    .from("meetings")
+    .select("sale_amount")
+    .eq("sale_status", "won");
+
+  const totalRevenue =
+    revenueRows?.reduce((sum, row) => sum + (row.sale_amount || 0), 0) ?? 0;
 
   return (
     <main className="min-h-screen bg-[#1a1410] text-amber-50">
@@ -76,6 +102,7 @@ export default async function Home() {
 
         <section className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard title="Prospects détectés" value={stats.prospects} />
+          <StatCard title="Prospects contactables" value={stats.contactable} />
           <StatCard title="Emails envoyés" value={stats.contacted} />
           <StatCard title="Réponses reçues" value={stats.replies} />
           <StatCard title="Prospects qualifiés" value={stats.qualified} />
@@ -87,12 +114,21 @@ export default async function Home() {
         <section className="mt-8 grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-3xl border border-amber-800/30 bg-[#241b15]/85 p-6 shadow-xl">
             <h2 className="text-2xl font-semibold text-amber-100">
-              Prospects récents
+              Prospects contactables récents
             </h2>
+
+            <div className="mt-4">
+              <Link
+                href="/prospects"
+                className="inline-block rounded-xl bg-amber-200/80 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+              >
+                Voir tous les prospects
+              </Link>
+            </div>
 
             {recentProspects.length === 0 ? (
               <p className="mt-4 text-amber-200/70">
-                Aucun prospect enregistré pour le moment.
+                Aucun prospect avec email trouvé pour le moment.
               </p>
             ) : (
               <div className="mt-5 overflow-hidden rounded-2xl border border-amber-900/40">
@@ -101,6 +137,7 @@ export default async function Home() {
                     <tr>
                       <th className="px-4 py-3 font-medium">Organisme</th>
                       <th className="px-4 py-3 font-medium">Email</th>
+                      <th className="px-4 py-3 font-medium">Type</th>
                       <th className="px-4 py-3 font-medium">Statut</th>
                     </tr>
                   </thead>
@@ -108,13 +145,24 @@ export default async function Home() {
                     {recentProspects.map((prospect) => (
                       <tr
                         key={prospect.id}
-                        className="border-t border-amber-900/30 bg-[#201813]/80"
+                        className="border-t border-amber-900/30 bg-[#201813]/80 hover:bg-[#2b211b] cursor-pointer"
                       >
                         <td className="px-4 py-3 text-amber-100">
-                          {prospect.organization_name ?? "Sans nom"}
+                          <Link
+                            href={`/prospects/${prospect.id}`}
+                            className="hover:underline"
+                          >
+                            {prospect.organization_name ?? "Sans nom"}
+                          </Link>
                         </td>
                         <td className="px-4 py-3 text-amber-200/70">
-                          {prospect.email ?? "—"}
+                          {prospect.email_found || prospect.email || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-amber-200/70">
+                          {prospect.prospect_type === "nouvel_entrant" &&
+                            "Nouvel entrant"}
+                          {prospect.prospect_type === "qp_ok" && "QP OK"}
+                          {prospect.prospect_type === "no_nda" && "No NDA"}
                         </td>
                         <td className="px-4 py-3">
                           <StatusBadge status={prospect.status} />
@@ -144,6 +192,12 @@ export default async function Home() {
               </div>
 
               <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
+                {stats.contactable === 0
+                  ? "Aucun prospect contactable pour le moment."
+                  : `${stats.contactable} prospect(s) avec email trouvé.`}
+              </div>
+
+              <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
                 {stats.salesWon === 0
                   ? "Aucune vente conclue pour le moment."
                   : `${stats.salesWon} vente(s) conclue(s) pour un total de ${stats.revenue} €.`}
@@ -154,6 +208,9 @@ export default async function Home() {
 
         <section className="mt-8">
           <MeetingsSalesManager />
+        </section>
+        <section className="mt-8">
+          <DashboardReminders />
         </section>
       </div>
     </main>
