@@ -1,21 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!supabaseUrl) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_URL manquant");
+  if (!supabaseUrl) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL manquant");
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY manquant");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
 }
-
-if (!serviceRoleKey) {
-  throw new Error("SUPABASE_SERVICE_ROLE_KEY manquant");
-}
-
-const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 export async function POST(req: Request) {
   try {
+    const supabase = getSupabaseAdmin();
     const body = await req.json();
 
     console.log("TALLY WEBHOOK BODY =", JSON.stringify(body, null, 2));
