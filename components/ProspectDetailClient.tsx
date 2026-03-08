@@ -27,6 +27,9 @@ type Prospect = {
   questionnaire_status: string | null;
   questionnaire_response_json: any;
   questionnaire_completed_at: string | null;
+  recommended_offer_primary: string | null;
+  recommended_offer_secondary: string | null;
+  sales_angle: string | null;
 };
 
 type ProspectMessage = {
@@ -78,7 +81,9 @@ function formatDate(value: string | null | undefined) {
   return new Date(value).toLocaleString();
 }
 
-function parseTallyResponses(data: any) {
+function parseTallyResponses(
+  data: any,
+): { question: string; answer: string }[] {
   if (!data?.data?.fields) return [];
 
   const fields = data.data.fields;
@@ -650,28 +655,42 @@ export default function ProspectDetailClient({
           {!prospect.questionnaire_response_json ? (
             <p>Aucune réponse enregistrée pour le moment.</p>
           ) : (
-            <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
-              {!prospect.questionnaire_response_json ? (
-                <p>Aucune réponse enregistrée pour le moment.</p>
-              ) : (
-                <div className="space-y-2">
-                  {parseTallyResponses(
-                    prospect.questionnaire_response_json,
-                  ).map((item, index) => (
-                    <div
-                      key={index}
-                      className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2"
-                    >
-                      <p className="text-amber-100 font-medium">
-                        {item.question}
-                      </p>
-                      <p className="text-amber-200/80">{item.answer}</p>
-                    </div>
-                  ))}
-                </div>
+            <div className="space-y-2">
+              {parseTallyResponses(prospect.questionnaire_response_json).map(
+                (item: { question: string; answer: string }, index: number) => (
+                  <div
+                    key={index}
+                    className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2"
+                  >
+                    <p className="font-medium text-amber-100">
+                      {item.question}
+                    </p>
+                    <p className="text-amber-200/80">{item.answer}</p>
+                  </div>
+                ),
               )}
-            </pre>
+            </div>
           )}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
+        {cardTitle("Recommandation commerciale")}
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+            <strong>Offre principale :</strong>{" "}
+            {prospect.recommended_offer_primary || "—"}
+          </div>
+
+          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+            <strong>Offre secondaire :</strong>{" "}
+            {prospect.recommended_offer_secondary || "—"}
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+          <strong>Angle commercial :</strong> {prospect.sales_angle || "—"}
         </div>
       </section>
 
