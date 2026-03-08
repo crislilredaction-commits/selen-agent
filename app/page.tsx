@@ -1,65 +1,161 @@
-import Image from "next/image";
+import SelionCompanion from "../components/SelionCompanion";
+import { supabase } from "../lib/supabaseClient";
+import MeetingsSalesManager from "../components/MeetingsSalesManager";
 
-export default function Home() {
+function StatCard({ title, value }: { title: string; value: string | number }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="rounded-3xl border border-amber-900/40 bg-[#2a211b]/80 p-5 shadow-lg">
+      <p className="text-sm text-amber-200/70">{title}</p>
+      <p className="mt-2 text-3xl font-semibold text-amber-100">{value}</p>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  const label = status ?? "inconnu";
+
+  return (
+    <span className="rounded-full border border-amber-700/40 bg-[#2b211b] px-3 py-1 text-xs text-amber-200">
+      {label}
+    </span>
+  );
+}
+
+export default async function Home() {
+  const { data: prospects, error: prospectsError } = await supabase
+    .from("prospects")
+    .select("id, organization_name, email, status, created_at")
+    .order("created_at", { ascending: false });
+
+  const { data: meetings, error: meetingsError } = await supabase
+    .from("meetings")
+    .select("id, meeting_status, sale_status, sale_amount");
+
+  const allProspects = prospects ?? [];
+  const allMeetings = meetings ?? [];
+
+  const salesWon = allMeetings.filter((m) => m.sale_status === "won").length;
+
+  const revenue = allMeetings
+    .filter((m) => m.sale_status === "won")
+    .reduce((sum, m) => sum + (Number(m.sale_amount) || 0), 0);
+
+  const stats = {
+    prospects: allProspects.length,
+    contacted: allProspects.filter((p) => p.status === "contacted").length,
+    replies: allProspects.filter((p) => p.status === "replied").length,
+    qualified: allProspects.filter((p) => p.status === "qualified").length,
+    meetings: allProspects.filter((p) => p.status === "meeting_booked").length,
+    salesWon,
+    revenue,
+  };
+
+  const recentProspects = allProspects.slice(0, 8);
+
+  return (
+    <main className="min-h-screen bg-[#1a1410] text-amber-50">
+      <div className="fixed right-6 top-6 w-[220px]">
+        <SelionCompanion />
+      </div>
+
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <h1 className="text-4xl font-bold text-amber-100">
+          Tableau de bord — Sélion
+        </h1>
+
+        <p className="mt-2 text-amber-200/70">
+          Agent de prospection automatique pour Selen Editions
+        </p>
+
+        {(prospectsError || meetingsError) && (
+          <div className="mt-6 rounded-2xl border border-red-900/40 bg-red-950/20 p-4 text-red-200">
+            Erreur Supabase :{" "}
+            {prospectsError?.message || meetingsError?.message}
+          </div>
+        )}
+
+        <section className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard title="Prospects détectés" value={stats.prospects} />
+          <StatCard title="Emails envoyés" value={stats.contacted} />
+          <StatCard title="Réponses reçues" value={stats.replies} />
+          <StatCard title="Prospects qualifiés" value={stats.qualified} />
+          <StatCard title="RDV programmés" value={stats.meetings} />
+          <StatCard title="Ventes conclues" value={stats.salesWon} />
+          <StatCard title="CA généré" value={`${stats.revenue} €`} />
+        </section>
+
+        <section className="mt-8 grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="rounded-3xl border border-amber-800/30 bg-[#241b15]/85 p-6 shadow-xl">
+            <h2 className="text-2xl font-semibold text-amber-100">
+              Prospects récents
+            </h2>
+
+            {recentProspects.length === 0 ? (
+              <p className="mt-4 text-amber-200/70">
+                Aucun prospect enregistré pour le moment.
+              </p>
+            ) : (
+              <div className="mt-5 overflow-hidden rounded-2xl border border-amber-900/40">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[#2b211b] text-amber-200/80">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Organisme</th>
+                      <th className="px-4 py-3 font-medium">Email</th>
+                      <th className="px-4 py-3 font-medium">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentProspects.map((prospect) => (
+                      <tr
+                        key={prospect.id}
+                        className="border-t border-amber-900/30 bg-[#201813]/80"
+                      >
+                        <td className="px-4 py-3 text-amber-100">
+                          {prospect.organization_name ?? "Sans nom"}
+                        </td>
+                        <td className="px-4 py-3 text-amber-200/70">
+                          {prospect.email ?? "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={prospect.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-amber-800/30 bg-[#241b15]/85 p-6 shadow-xl">
+            <h2 className="text-2xl font-semibold text-amber-100">
+              Journal de Sélion
+            </h2>
+
+            <div className="mt-4 space-y-3 text-sm text-amber-200/80">
+              <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
+                Sélion est prêt à détecter les nouveaux organismes de formation.
+              </div>
+
+              <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
+                {stats.prospects === 0
+                  ? "Aucun prospect en base pour le moment."
+                  : `${stats.prospects} prospect(s) actuellement enregistrés.`}
+              </div>
+
+              <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
+                {stats.salesWon === 0
+                  ? "Aucune vente conclue pour le moment."
+                  : `${stats.salesWon} vente(s) conclue(s) pour un total de ${stats.revenue} €.`}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <MeetingsSalesManager />
+        </section>
+      </div>
+    </main>
   );
 }
