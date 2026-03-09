@@ -4,6 +4,8 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
+const EMAIL_SENDING_ENABLED = false;
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -25,7 +27,8 @@ async function main() {
     .select(
       "id, organization_name, email, email_found, first_email_status, workflow_status",
     )
-    .or("first_email_status.is.null,first_email_status.eq.not_sent")
+    .eq("first_email_status", "not_sent")
+    .eq("prospect_type", "nouvel_entrant")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -42,13 +45,19 @@ async function main() {
 
   for (const prospect of candidates) {
     const email = prospect.email_found || prospect.email;
-
     if (!email) continue;
 
     try {
       console.log(
-        `Envoi à ${prospect.organization_name || "Prospect"} <${email}>`,
+        `Préparation envoi à ${prospect.organization_name || "Prospect"} <${email}>`,
       );
+
+      if (!EMAIL_SENDING_ENABLED) {
+        console.log(
+          `EMAIL BLOQUÉ (mode test) → ${prospect.organization_name || "Prospect"} <${email}>`,
+        );
+        continue;
+      }
 
       await sendProspectQuestionnaireEmail({
         to: email,

@@ -24,25 +24,34 @@ function StatusBadge({ status }: { status: string | null }) {
 }
 
 export default async function Home() {
-  const { data: prospects, error: prospectsError } = await supabase
+  const { count: prospectsCount, error: prospectsCountError } = await supabase
+    .from("prospects")
+    .select("*", { count: "exact", head: true });
+
+  const { count: contactableCount, error: contactableCountError } =
+    await supabase
+      .from("prospects")
+      .select("*", { count: "exact", head: true })
+      .or("email_found.not.is.null,email.not.is.null");
+
+  const { data: recentProspects, error: recentProspectsError } = await supabase
     .from("prospects")
     .select(
       "id, organization_name, email, email_found, status, prospect_type, first_email_status, created_at",
     )
-    .order("created_at", { ascending: false });
+    .or("email_found.not.is.null,email.not.is.null")
+    .order("created_at", { ascending: false })
+    .limit(8);
+
+  const { data: allProspectsForStatuses, error: prospectsError } =
+    await supabase.from("prospects").select("id, status, first_email_status");
 
   const { data: meetings, error: meetingsError } = await supabase
     .from("meetings")
     .select("id, meeting_status, sale_status, sale_amount");
 
-  const allProspects = prospects ?? [];
+  const allProspects = allProspectsForStatuses ?? [];
   const allMeetings = meetings ?? [];
-
-  const contactableProspects = allProspects.filter(
-    (p) =>
-      (p.email_found && p.email_found.trim() !== "") ||
-      (p.email && p.email.trim() !== ""),
-  );
 
   const salesWon = allMeetings.filter((m) => m.sale_status === "won").length;
 
@@ -51,8 +60,8 @@ export default async function Home() {
     .reduce((sum, m) => sum + (Number(m.sale_amount) || 0), 0);
 
   const stats = {
-    prospects: allProspects.length,
-    contactable: contactableProspects.length,
+    prospects: prospectsCount ?? 0,
+    contactable: contactableCount ?? 0,
     contacted: allProspects.filter((p) => p.first_email_status === "sent")
       .length,
     replies: allProspects.filter((p) => p.status === "replied").length,
@@ -61,8 +70,6 @@ export default async function Home() {
     salesWon,
     revenue,
   };
-
-  const recentProspects = contactableProspects.slice(0, 8);
 
   return (
     <main className="min-h-screen bg-[#1a1410] text-amber-50">
@@ -186,7 +193,7 @@ export default async function Home() {
               <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
                 {stats.contactable === 0
                   ? "Aucun prospect contactable pour le moment."
-                  : `${stats.contactable} prospect(s) avec email trouvé.`}
+                  : `${stats.contactable} prospect(s) contactable(s).`}
               </div>
 
               <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">

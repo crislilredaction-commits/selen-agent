@@ -3,10 +3,10 @@ dotenv.config({ path: ".env.local" });
 
 import { Resend } from "resend";
 
+const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
+
 function getResendClient() {
   const resendApiKey = process.env.RESEND_API_KEY;
-
-  console.log("RESEND_API_KEY présente ?", !!resendApiKey);
 
   if (!resendApiKey) {
     throw new Error("RESEND_API_KEY manquant");
@@ -26,9 +26,40 @@ export async function sendProspectQuestionnaireEmail({
 }) {
   const resend = getResendClient();
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
+  if (!EMAIL_SENDING_ENABLED) {
+    console.log("EMAIL BLOQUÉ (mode test)", {
+      to,
+      subject: "...",
+    });
+    return { blocked: true };
+  }
+
+  if (!EMAIL_SENDING_ENABLED) {
+    console.log("EMAIL BLOQUÉ (mode test)", {
+      to,
+      subject: "...",
+    });
+    return { blocked: true };
+  }
+
+  if (!EMAIL_SENDING_ENABLED) {
+    console.log("EMAIL BLOQUÉ (mode test)", {
+      to,
+      subject: "...",
+    });
+    return { blocked: true };
+  }
+
+  if (!EMAIL_SENDING_ENABLED) {
+    console.log("EMAIL BLOQUÉ (mode test)", {
+      to,
+      subject: "...",
+    });
+    return { blocked: true };
+  }
 
   return await resend.emails.send({
-    from: "Selion ✨ <selion@selen-editions.fr>",
+    from: "Selion ✨ <hello@selen-editions.fr>",
     to,
     subject: "Félicitations pour votre NDA ✨",
     html: `
@@ -46,7 +77,7 @@ export async function sendProspectQuestionnaireEmail({
 
       <p>Notre mission est simple : transmettre notre expertise pour que l’administratif devienne un allié… et non un obstacle à votre mission de transmission ✨</p>
 
-      <p>Pour mieux comprendre votre situation, nous avons préparé un court questionnaire (2 minutes environ) :</p>
+      <p>Pour mieux comprendre votre situation, nous avons préparé un court questionnaire :</p>
 
       <p style="margin:20px 0;">
         <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
@@ -65,12 +96,104 @@ export async function sendProspectQuestionnaireEmail({
   });
 }
 
+function getOfferLabel(offer: string | null | undefined) {
+  switch (offer) {
+    case "prepa_qualiopi":
+      return "la préparation à l’audit Qualiopi";
+    case "audit_blanc":
+      return "l’audit blanc";
+    case "gestion_quotidienne":
+      return "la gestion administrative au quotidien";
+    case "infos_uniquement":
+      return "des ressources d’information";
+    case "garder_contact":
+      return "un maintien du contact pour la suite";
+    default:
+      return "un accompagnement adapté à votre situation";
+  }
+}
+
+function getOfferIntro(offer: string | null | undefined) {
+  switch (offer) {
+    case "prepa_qualiopi":
+      return "Au vu de vos réponses, il semble que la préparation à l’audit Qualiopi soit l’accompagnement le plus pertinent pour vous en ce moment.";
+    case "audit_blanc":
+      return "Au vu de vos réponses, un audit blanc semble être la meilleure étape pour vérifier sereinement ce qui est déjà prêt et ce qui mérite encore quelques ajustements.";
+    case "gestion_quotidienne":
+      return "Au vu de vos réponses, un accompagnement autour de la gestion administrative au quotidien semble pouvoir vous apporter le plus de sérénité et de structure.";
+    case "infos_uniquement":
+      return "Au vu de vos réponses, il semble plus juste de commencer par vous transmettre des repères utiles et concrets, sans vous bousculer.";
+    case "garder_contact":
+      return "Au vu de vos réponses, le plus simple est sans doute de garder le contact pour le moment, afin que vous puissiez avancer à votre rythme.";
+    default:
+      return "Au vu de vos réponses, nous pensons qu’un accompagnement adapté pourrait vous être utile.";
+  }
+}
+
+export async function sendQuestionnaireFollowupEmail({
+  to,
+  organizationName,
+  recommendedOfferPrimary,
+}: {
+  to: string;
+  organizationName?: string | null;
+  recommendedOfferPrimary?: string | null;
+}) {
+  const resend = getResendClient();
+
+  const pdfLink =
+    "https://selion.selen-editions.fr/guide-dossier-stagiaire-qualiopi.pdf";
+  const calendlyLink = "https://calendly.com/romaric-paymal/rdv-romaric-paymal";
+
+  const offerLabel = getOfferLabel(recommendedOfferPrimary);
+  const offerIntro = getOfferIntro(recommendedOfferPrimary);
+
+  return await resend.emails.send({
+    from: "Selion ✨ <hello@selen-editions.fr>",
+    to,
+    subject: "Votre guide Selen + la suite la plus adaptée ✨",
+    html: `
+      <img src="https://selion.selen-editions.fr/Logo%20Selen%20Editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
+
+      <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
+
+      <p>Merci d’avoir pris le temps de répondre à notre questionnaire.</p>
+
+      <p>${offerIntro}</p>
+
+      <p>Comme promis, voici le guide Selen consacré aux documents essentiels pour structurer vos dossiers stagiaires et sécuriser votre conformité Qualiopi :</p>
+
+      <p style="margin:20px 0;">
+        <a href="${pdfLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
+          Télécharger le guide 📘
+        </a>
+      </p>
+
+      <p>Ce guide vous aidera à mieux comprendre les pièces clés liées aux dossiers clients : présentation de formation, dossier d’inscription, convocation, émargement, évaluations, contenus pédagogiques et questionnaire de satisfaction.</p>
+
+      <p>Si vous souhaitez aller plus loin, nous pouvons échanger sur <strong>${offerLabel}</strong> et voir ce qui serait le plus utile pour votre organisme.</p>
+
+      <p style="margin:20px 0;">
+        <a href="${calendlyLink}" style="background:#2b211b;color:#f3d9a2;padding:12px 18px;text-decoration:none;border-radius:6px;border:1px solid #7a5a31;">
+          Réserver un échange avec Romaric 📅
+        </a>
+      </p>
+
+      <p>Chez Selen, nous aimons aider les formateurs et organismes de formation à avancer avec plus de clarté, moins de brouillard administratif… et un peu plus de sérénité au quotidien ✨</p>
+
+      <p>À très bientôt,<br>
+      <strong>Sélion ✨</strong><br>
+      Selen Editions</p>
+    `,
+  });
+}
+
 export async function sendTestEmail() {
   const resend = getResendClient();
 
   return await resend.emails.send({
     from: "Selion ✨ <selion@selen-editions.fr>",
-    to: ["crislil.redaction@gmail.com"],
+    to: ["crisli.redaction@gmail.com"],
     subject: "Test Selion ✨",
     html: `<p>Test email Selion ✨</p>`,
   });

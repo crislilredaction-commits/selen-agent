@@ -9,7 +9,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-const ENRICHMENT_BATCH_SIZE = 10;
+const ENRICHMENT_BATCH_SIZE = 200;
 
 type ProspectRow = {
   id: string;
@@ -353,6 +353,7 @@ async function main() {
     .from("prospects")
     .select("*")
     .in("enrichment_status", ["pending", "error", "no_result", "identified"])
+    .order("created_at", { ascending: false })
     .limit(ENRICHMENT_BATCH_SIZE);
 
   if (!prospects?.length) {
