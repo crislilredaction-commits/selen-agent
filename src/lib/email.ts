@@ -77,7 +77,7 @@ export async function sendProspectQuestionnaireEmail({
 
       <p>Notre mission est simple : transmettre notre expertise pour que l’administratif devienne un allié… et non un obstacle à votre mission de transmission ✨</p>
 
-      <p>Pour mieux comprendre votre situation, nous avons préparé un court questionnaire :</p>
+      <p>Pour mieux comprendre votre situation, nous avons préparé un mini diagnostic gratuit pour évaluer la préparation administrative de votre organisme :</p>
 
       <p style="margin:20px 0;">
         <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
@@ -85,9 +85,7 @@ export async function sendProspectQuestionnaireEmail({
         </a>
       </p>
 
-      <p>Vos réponses nous permettront simplement de voir si nous pouvons vous être utiles et de quelle manière.</p>
-
-      <p>Dans tous les cas, nous serons ravis de découvrir votre projet.</p>
+      <p>Cela prend 2 minutes et vous permettra de savoir si votre structure est déjà prête pour les obligations Qualiopi ou si certains points méritent d’être sécurisés.</p>
 
       <p>À bientôt,<br>
       <strong>Sélion ✨</strong><br>
