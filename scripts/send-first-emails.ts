@@ -4,7 +4,7 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
-const EMAIL_SENDING_ENABLED = false;
+const EMAIL_SENDING_ENABLED = true;
 const DAILY_SEND_LIMIT = 20;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,6 +20,10 @@ if (!serviceRoleKey) {
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
 
@@ -34,7 +38,6 @@ async function main() {
     .eq("is_visible", true)
     .eq("prospect_type", "nouvel_entrant")
     .or("first_email_status.is.null,first_email_status.eq.not_sent")
-    .gte("created_at", startOfTodayParis.toISOString())
     .order("created_at", { ascending: false })
     .limit(DAILY_SEND_LIMIT);
 
@@ -82,6 +85,8 @@ async function main() {
         organizationName: prospect.organization_name,
         prospectId: prospect.id,
       });
+      const delay = 120000 + Math.floor(Math.random() * 120000);
+      await sleep(delay);
 
       const now = new Date().toISOString();
       const followupDate = new Date(
