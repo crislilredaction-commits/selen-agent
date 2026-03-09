@@ -23,13 +23,17 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
 
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select(
-      "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type",
+      "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type, created_at",
     )
     .eq("prospect_type", "nouvel_entrant")
     .or("first_email_status.is.null,first_email_status.eq.not_sent")
+    .gte("created_at", startOfToday.toISOString())
     .order("created_at", { ascending: false })
     .limit(DAILY_SEND_LIMIT);
 
