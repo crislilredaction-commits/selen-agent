@@ -113,9 +113,6 @@ export default async function ProspectsPage({
   const totalResults = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
 
-  const previousPage = currentPage > 1 ? currentPage - 1 : null;
-  const nextPage = currentPage < totalPages ? currentPage + 1 : null;
-
   return (
     <main className="min-h-screen bg-[#1a1410] p-8 text-amber-50">
       <div className="mb-4">
@@ -291,14 +288,14 @@ export default async function ProspectsPage({
         </p>
 
         <div className="flex gap-3">
-          {previousPage ? (
+          {currentPage > 1 ? (
             <Link
               href={buildPageLink({
                 search,
                 type: selectedType,
                 status: selectedStatus,
                 date: selectedDate,
-                page: previousPage,
+                page: currentPage - 1,
               })}
               className="rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
             >
@@ -310,14 +307,14 @@ export default async function ProspectsPage({
             </span>
           )}
 
-          {nextPage ? (
+          {currentPage < totalPages ? (
             <Link
               href={buildPageLink({
                 search,
                 type: selectedType,
                 status: selectedStatus,
                 date: selectedDate,
-                page: previousPage,
+                page: currentPage + 1,
               })}
               className="rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
             >
