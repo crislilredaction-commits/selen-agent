@@ -20,7 +20,11 @@ if (!ndaCsvUrl) {
   throw new Error("NDA_CSV_URL manquant");
 }
 
-const NDA_CSV_URL: string = ndaCsvUrl;
+const NDA_CSV_URL = process.env.NDA_CSV_URL!;
+
+if (!NDA_CSV_URL) {
+  throw new Error("NDA_CSV_URL manquant");
+}
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
@@ -184,7 +188,7 @@ async function main() {
   const runId = runInsert.data.id;
 
   try {
-    const csvText = await fetchCsvWithTimeout(NDA_CSV_URL);
+    const csvText = await fetchCsvWithTimeout(NDA_CSV_URL!);
 
     console.log("4. Parsing CSV...");
     const records = parse(csvText, {
