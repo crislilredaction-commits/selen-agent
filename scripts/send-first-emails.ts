@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
-import { sendProspectQuestionnaireEmail } from "../src/lib/email.ts";
+import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
 const EMAIL_SENDING_ENABLED = false;
 const DAILY_SEND_LIMIT = 20;
