@@ -6,7 +6,7 @@ import { parse } from "csv-parse/sync";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const NDA_CSV_URL = process.env.NDA_CSV_URL;
+const ndaCsvUrl = process.env.NDA_CSV_URL;
 
 if (!supabaseUrl) {
   throw new Error("NEXT_PUBLIC_SUPABASE_URL manquant");
@@ -16,9 +16,11 @@ if (!serviceRoleKey) {
   throw new Error("SUPABASE_SERVICE_ROLE_KEY manquant");
 }
 
-if (!NDA_CSV_URL) {
+if (!ndaCsvUrl) {
   throw new Error("NDA_CSV_URL manquant");
 }
+
+const NDA_CSV_URL: string = ndaCsvUrl;
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
