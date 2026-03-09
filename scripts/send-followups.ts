@@ -11,6 +11,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
   console.log("Robot relance prospects — démarrage");
 
@@ -24,19 +28,22 @@ async function main() {
     .is("questionnaire_completed_at", null)
     .lt("questionnaire_last_sent_at", sevenDaysAgo.toISOString());
 
+  const filteredProspects = (prospects ?? []).filter(
+    (prospect) => prospect.followup_email_status !== "sent",
+  );
+
   if (error) {
     console.error(error);
     return;
   }
 
-  if (!prospects || prospects.length === 0) {
+  if (!filteredProspects || filteredProspects.length === 0) {
     console.log("Aucun prospect à relancer");
     return;
   }
 
-  console.log(`Prospects à relancer : ${prospects.length}`);
-
-  for (const prospect of prospects) {
+  console.log(`Prospects à relancer : ${filteredProspects.length}`);
+  for (const prospect of filteredProspects) {
     const email = prospect.email_found || prospect.email;
 
     if (!email) continue;
@@ -62,6 +69,9 @@ async function main() {
           followup_sent_at: new Date().toISOString(),
         })
         .eq("id", prospect.id);
+
+      const delay = 120000 + Math.floor(Math.random() * 120000);
+      await sleep(delay);
     } catch (error) {
       console.error("Erreur relance :", error);
 
