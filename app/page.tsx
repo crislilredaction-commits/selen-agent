@@ -3,6 +3,7 @@ import MeetingsSalesManager from "../components/MeetingsSalesManager";
 import DashboardReminders from "../components/DashboardReminders";
 import { supabase } from "../lib/supabaseClient";
 import Link from "next/link";
+import LogoutButton from "../components/LogoutButton";
 
 function StatCard({ title, value }: { title: string; value: string | number }) {
   return (
@@ -77,14 +78,20 @@ export default async function Home() {
         <SelionCompanion />
       </div>
 
+      <div className="fixed right-6 top-6 z-50">
+        <LogoutButton />
+      </div>
+
       <div className="mx-auto max-w-7xl px-6 py-10">
         <h1 className="text-4xl font-bold text-amber-100">
           Tableau de bord — Sélion
         </h1>
 
-        <p className="mt-2 text-amber-200/70">
-          Agent de prospection automatique pour Selen Editions
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-4">
+          <p className="text-amber-200/70">
+            Agent de prospection automatique pour Selen Editions
+          </p>
+        </div>
 
         {(prospectsError || meetingsError) && (
           <div className="mt-6 rounded-2xl border border-red-900/40 bg-red-950/20 p-4 text-red-200">

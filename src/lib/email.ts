@@ -34,40 +34,15 @@ export async function sendProspectQuestionnaireEmail({
     return { blocked: true };
   }
 
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL BLOQUÉ (mode test)", {
-      to,
-      subject: "...",
-    });
-    return { blocked: true };
-  }
-
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL BLOQUÉ (mode test)", {
-      to,
-      subject: "...",
-    });
-    return { blocked: true };
-  }
-
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL BLOQUÉ (mode test)", {
-      to,
-      subject: "...",
-    });
-    return { blocked: true };
-  }
-
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
     subject: "Félicitations pour votre NDA ✨",
     html: `
-      <img src="https://selion.selen-editions.fr/Logo%20Selen%20Editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
-
+      
       <p>Bonjour ✨</p>
 
-      <p>Nous avons remarqué que votre organisme de formation venait d’obtenir son numéro de déclaration d’activité. <strong>Félicitations pour cette belle étape 🎉</strong></p>
+      <p>Vous venez d’obtenir votre numéro de déclaration d’activité. <strong>Félicitations pour cette belle étape 🎉</strong></p>
 
       <p>Se lancer dans la formation est une aventure passionnante… mais on découvre vite que l’administratif peut parfois ressembler à un petit labyrinthe 🧭</p>
 
@@ -77,7 +52,7 @@ export async function sendProspectQuestionnaireEmail({
 
       <p>Notre mission est simple : transmettre notre expertise pour que l’administratif devienne un allié… et non un obstacle à votre mission de transmission ✨</p>
 
-      <p>Pour mieux comprendre votre situation, nous avons préparé un mini diagnostic gratuit pour évaluer la préparation administrative de votre organisme :</p>
+      <p>Nous avons préparé un mini diagnostic gratuit pour évaluer la préparation administrative de votre organisme :</p>
 
       <p style="margin:20px 0;">
         <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
@@ -85,11 +60,12 @@ export async function sendProspectQuestionnaireEmail({
         </a>
       </p>
 
-      <p>Cela prend 2 minutes et vous permettra de savoir si votre structure est déjà prête pour les obligations Qualiopi ou si certains points méritent d’être sécurisés.</p>
+      <p>Cela prend 2 minutes et vous permettra de savoir si votre structure est déjà prête pour les obligations de la formation professionnelle ou si certains points méritent d’être sécurisés.</p>
 
       <p>À bientôt,<br>
       <strong>Sélion ✨</strong><br>
       Selen Editions</p>
+      <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
     `,
   });
 }
@@ -151,8 +127,7 @@ export async function sendQuestionnaireFollowupEmail({
     to,
     subject: "Votre guide Selen + la suite la plus adaptée ✨",
     html: `
-      <img src="https://selion.selen-editions.fr/Logo%20Selen%20Editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
-
+      
       <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
 
       <p>Merci d’avoir pris le temps de répondre à notre questionnaire.</p>
@@ -182,6 +157,7 @@ export async function sendQuestionnaireFollowupEmail({
       <p>À très bientôt,<br>
       <strong>Sélion ✨</strong><br>
       Selen Editions</p>
+      <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
     `,
   });
 }

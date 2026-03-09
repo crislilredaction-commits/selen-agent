@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendQuestionnaireFollowupEmail } from "@/src/lib/email";
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -165,8 +166,6 @@ export async function POST(req: Request) {
     const supabase = getSupabaseAdmin();
     const body = await req.json();
 
-    console.log("TALLY WEBHOOK BODY =", JSON.stringify(body, null, 2));
-
     const fields = body?.data?.fields ?? [];
 
     const prospectField = fields.find(
@@ -185,21 +184,82 @@ export async function POST(req: Request) {
 
     const recommendation = computeRecommendation(fields);
 
-    const { error } = await supabase
+    const { data: existingProspect, error: fetchError } = await supabase
+      .from("prospects")
+      .select(
+        "id, organization_name, email, email_found, recommended_offer_primary, offer_mail_sent_at",
+      )
+      .eq("id", prospectId)
+      .single();
+
+    if (fetchError) {
+      return NextResponse.json({ error: fetchError.message }, { status: 500 });
+    }
+
+    const now = new Date().toISOString();
+
+    const { error: updateError } = await supabase
       .from("prospects")
       .update({
         questionnaire_status: "completed",
         questionnaire_response_json: body,
-        questionnaire_completed_at: new Date().toISOString(),
+        questionnaire_completed_at: now,
         workflow_status: "questionnaire_completed",
         recommended_offer_primary: recommendation.primary,
         recommended_offer_secondary: recommendation.secondary,
       })
       .eq("id", prospectId);
 
-    if (error) {
-      console.error("SUPABASE ERROR =", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    const targetEmail =
+      existingProspect.email_found || existingProspect.email || null;
+
+    if (targetEmail && !existingProspect.offer_mail_sent_at) {
+      await sendQuestionnaireFollowupEmail({
+        to: targetEmail,
+        organizationName: existingProspect.organization_name,
+        recommendedOfferPrimary: recommendation.primary,
+      });
+
+      const sentAt = new Date().toISOString();
+
+      const { error: mailUpdateError } = await supabase
+        .from("prospects")
+        .update({
+          offer_mail_sent_at: sentAt,
+          pdf_sent_at: sentAt,
+          calendly_sent_at: sentAt,
+        })
+        .eq("id", prospectId);
+
+      if (mailUpdateError) {
+        return NextResponse.json(
+          { error: mailUpdateError.message },
+          { status: 500 },
+        );
+      }
+
+      const { error: logError } = await supabase
+        .from("prospect_messages")
+        .insert({
+          prospect_id: prospectId,
+          channel: "email",
+          direction: "outbound",
+          message_type: "questionnaire_followup_email",
+          subject: "Votre guide Selen + la suite la plus adaptée ✨",
+          body: `Mail automatique envoyé après questionnaire avec guide PDF + lien Calendly. Recommandation principale : ${recommendation.primary ?? "—"}.`,
+          delivery_status: "sent",
+          auto_generated: true,
+          human_validated: false,
+          validation_required: false,
+        });
+
+      if (logError) {
+        console.error("LOG ERROR =", logError);
+      }
     }
 
     return NextResponse.json({ success: true });
