@@ -28,4 +28,11 @@ jobs:
           echo "SERVICE ROLE present: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
           echo "CSV URL present: ${{ secrets.NDA_CSV_URL != '' }}"
 
-      - run: npx tsx scripts/selen-agent.ts
+      - name: Run Selion base agent
+        run: npx tsx scripts/selen-agent.ts
+
+      - name: Enrich prospects
+        run: npx tsx scripts/enrich-prospects-v3.ts
+
+      - name: Purge prospects
+        run: npx tsx scripts/purge-prospects.ts
