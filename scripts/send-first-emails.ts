@@ -4,7 +4,7 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
-const EMAIL_SENDING_ENABLED = true;
+const EMAIL_SENDING_ENABLED = false;
 const DAILY_SEND_LIMIT = 20;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -31,6 +31,7 @@ async function main() {
     .select(
       "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type, created_at",
     )
+    .eq("is_visible", true)
     .eq("prospect_type", "nouvel_entrant")
     .or("first_email_status.is.null,first_email_status.eq.not_sent")
     .gte("created_at", startOfTodayParis.toISOString())
@@ -57,6 +58,13 @@ async function main() {
         `Préparation envoi à ${prospect.organization_name || "Prospect"} <${email}>`,
       );
 
+      if (!EMAIL_SENDING_ENABLED) {
+        console.log(
+          `EMAIL BLOQUÉ (mode test) → ${prospect.organization_name || "Prospect"} <${email}>`,
+        );
+        continue;
+      }
+
       const { error: markSendingError } = await supabase
         .from("prospects")
         .update({
@@ -67,13 +75,6 @@ async function main() {
 
       if (markSendingError) {
         throw new Error(markSendingError.message);
-      }
-
-      if (!EMAIL_SENDING_ENABLED) {
-        console.log(
-          `EMAIL BLOQUÉ (mode test) → ${prospect.organization_name || "Prospect"} <${email}>`,
-        );
-        continue;
       }
 
       await sendProspectQuestionnaireEmail({

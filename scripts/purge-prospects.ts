@@ -46,13 +46,13 @@ async function main() {
 
   for (const prospect of toDelete) {
     console.log(
-      `Suppression → ${prospect.organization_name ?? "Sans nom"} (${prospect.id})`,
+      `Masquage → ${prospect.organization_name ?? "Sans nom"} (${prospect.id})`,
     );
 
     const { error: logError } = await supabase.from("robot_logs").insert({
       run_type: "purge",
       level: "info",
-      message: "Prospect supprimé car sans email exploitable",
+      message: "Prospect masqué car sans email exploitable",
       details: {
         prospect_id: prospect.id,
         organization_name: prospect.organization_name,
@@ -65,7 +65,7 @@ async function main() {
 
     const { error: deleteError } = await supabase
       .from("prospects")
-      .delete()
+      .update({ is_visible: false })
       .eq("id", prospect.id);
 
     if (deleteError) {

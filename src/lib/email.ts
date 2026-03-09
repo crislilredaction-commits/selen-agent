@@ -3,7 +3,7 @@ dotenv.config({ path: ".env.local" });
 
 import { Resend } from "resend";
 
-const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
+const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === false;
 
 function getResendClient() {
   const resendApiKey = process.env.RESEND_API_KEY;

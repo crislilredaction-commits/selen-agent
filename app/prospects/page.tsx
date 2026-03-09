@@ -5,6 +5,7 @@ type SearchParams = {
   search?: string;
   type?: string;
   status?: string;
+  date?: string;
   page?: string;
 };
 
@@ -29,6 +30,7 @@ function buildPageLink(params: {
   search: string;
   type: string;
   status: string;
+  date: string;
   page: number;
 }) {
   const query = new URLSearchParams();
@@ -36,9 +38,21 @@ function buildPageLink(params: {
   if (params.search) query.set("search", params.search);
   if (params.type) query.set("type", params.type);
   if (params.status) query.set("status", params.status);
+  if (params.date) query.set("date", params.date);
   query.set("page", String(params.page));
 
   return `/prospects?${query.toString()}`;
+}
+
+function formatDate(dateString: string | null) {
+  if (!dateString) return "—";
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(dateString));
 }
 
 export default async function ProspectsPage({
@@ -51,6 +65,7 @@ export default async function ProspectsPage({
   const search = (resolvedSearchParams.search ?? "").trim();
   const selectedType = (resolvedSearchParams.type ?? "").trim();
   const selectedStatus = (resolvedSearchParams.status ?? "").trim();
+  const selectedDate = (resolvedSearchParams.date ?? "").trim();
   const currentPage = Math.max(
     1,
     Number(resolvedSearchParams.page ?? "1") || 1,
@@ -59,6 +74,7 @@ export default async function ProspectsPage({
   let query = supabase
     .from("prospects")
     .select("*", { count: "exact" })
+    .eq("is_visible", true)
     .or("email_found.not.is.null,email.not.is.null")
     .order("created_at", { ascending: false });
 
@@ -68,6 +84,12 @@ export default async function ProspectsPage({
 
   if (selectedType) {
     query = query.eq("prospect_type", selectedType);
+  }
+
+  if (selectedDate === "today") {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    query = query.gte("created_at", startOfToday.toISOString());
   }
 
   if (selectedStatus === "email_envoye") {
@@ -168,6 +190,20 @@ export default async function ProspectsPage({
           </select>
         </div>
 
+        <div>
+          <label className="mb-2 block text-sm text-amber-200/80">
+            Période
+          </label>
+          <select
+            name="date"
+            defaultValue={selectedDate}
+            className="w-full rounded-xl border border-amber-900/40 bg-[#2b211b] px-4 py-3 text-amber-50 outline-none"
+          >
+            <option value="">Toutes</option>
+            <option value="today">Ajoutés aujourd’hui</option>
+          </select>
+        </div>
+
         <input type="hidden" name="page" value="1" />
 
         <div className="md:col-span-4 flex gap-3">
@@ -240,9 +276,7 @@ export default async function ProspectsPage({
                   </td>
 
                   <td className="px-4 py-3 text-amber-200/70">
-                    {prospect.created_at
-                      ? new Date(prospect.created_at).toLocaleDateString()
-                      : "—"}
+                    {formatDate(prospect.created_at)}
                   </td>
                 </tr>
               ))
@@ -263,6 +297,7 @@ export default async function ProspectsPage({
                 search,
                 type: selectedType,
                 status: selectedStatus,
+                date: selectedDate,
                 page: previousPage,
               })}
               className="rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
@@ -281,7 +316,8 @@ export default async function ProspectsPage({
                 search,
                 type: selectedType,
                 status: selectedStatus,
-                page: nextPage,
+                date: selectedDate,
+                page: previousPage,
               })}
               className="rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
             >
