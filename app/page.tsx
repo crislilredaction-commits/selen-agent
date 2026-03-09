@@ -119,7 +119,7 @@ export default async function Home() {
               </Link>
             </div>
 
-            {recentProspects.length === 0 ? (
+            {(recentProspects ?? []).length === 0 ? (
               <p className="mt-4 text-amber-200/70">
                 Aucun prospect avec email trouvé pour le moment.
               </p>
@@ -135,7 +135,7 @@ export default async function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {recentProspects.map((prospect) => (
+                    (recentProspects ?? []).map((prospect) => (
                       <tr
                         key={prospect.id}
                         className="border-t border-amber-900/30 bg-[#201813]/80 hover:bg-[#2b211b] cursor-pointer"
