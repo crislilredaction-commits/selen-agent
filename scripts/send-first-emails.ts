@@ -4,7 +4,8 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
-const EMAIL_SENDING_ENABLED = false;
+const EMAIL_SENDING_ENABLED = true;
+const DAILY_SEND_LIMIT = 20;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,12 +26,12 @@ async function main() {
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select(
-      "id, organization_name, email, email_found, first_email_status, workflow_status",
+      "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type",
     )
-    .eq("first_email_status", "not_sent")
     .eq("prospect_type", "nouvel_entrant")
+    .or("first_email_status.is.null,first_email_status.eq.not_sent")
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(DAILY_SEND_LIMIT);
 
   if (error) {
     throw new Error(error.message);
@@ -51,6 +52,18 @@ async function main() {
       console.log(
         `Préparation envoi à ${prospect.organization_name || "Prospect"} <${email}>`,
       );
+
+      const { error: markSendingError } = await supabase
+        .from("prospects")
+        .update({
+          first_email_status: "sending",
+        })
+        .eq("id", prospect.id)
+        .or("first_email_status.is.null,first_email_status.eq.not_sent");
+
+      if (markSendingError) {
+        throw new Error(markSendingError.message);
+      }
 
       if (!EMAIL_SENDING_ENABLED) {
         console.log(
