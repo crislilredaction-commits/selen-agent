@@ -4,27 +4,17 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { parse } from "csv-parse/sync";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ndaCsvUrl = process.env.NDA_CSV_URL;
-
-if (!supabaseUrl) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_URL manquant");
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} manquant`);
+  }
+  return value;
 }
 
-if (!serviceRoleKey) {
-  throw new Error("SUPABASE_SERVICE_ROLE_KEY manquant");
-}
-
-if (!ndaCsvUrl) {
-  throw new Error("NDA_CSV_URL manquant");
-}
-
-const NDA_CSV_URL = process.env.NDA_CSV_URL!;
-
-if (!NDA_CSV_URL) {
-  throw new Error("NDA_CSV_URL manquant");
-}
+const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
+const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+const NDA_CSV_URL = getRequiredEnv("NDA_CSV_URL");
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
@@ -188,7 +178,7 @@ async function main() {
   const runId = runInsert.data.id;
 
   try {
-    const csvText = await fetchCsvWithTimeout(NDA_CSV_URL!);
+    const csvText = await fetchCsvWithTimeout(NDA_CSV_URL);
 
     console.log("4. Parsing CSV...");
     const records = parse(csvText, {
