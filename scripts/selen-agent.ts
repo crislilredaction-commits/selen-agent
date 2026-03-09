@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
-import { exec } from "child_process";
+import { spawn } from "child_process";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,14 +21,30 @@ function runScript(script: string): Promise<void> {
   return new Promise((resolve, reject) => {
     console.log(`\n--- Lancement ${script} ---`);
 
-    exec(`npx tsx scripts/${script}`, (error, stdout, stderr) => {
-      if (stdout) console.log(stdout);
-      if (stderr) console.error(stderr);
+    const child = spawn("npx", ["tsx", `scripts/${script}`], {
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: true,
+      env: process.env,
+    });
 
-      if (error) {
-        reject(error);
-      } else {
+    child.stdout.on("data", (data) => {
+      process.stdout.write(data.toString());
+    });
+
+    child.stderr.on("data", (data) => {
+      process.stderr.write(data.toString());
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        console.log(`\n--- Fin ${script} ---`);
         resolve();
+      } else {
+        reject(new Error(`${script} a échoué avec le code ${code}`));
       }
     });
   });
@@ -53,8 +69,8 @@ async function main() {
 
   try {
     await runScript("radar-nda.ts");
-
-    await runScript("enrich-prospects.ts");
+    await runScript("enrich-prospects-V3.ts");
+    await runScript("purge-prospects.ts");
 
     await cleanupOldSnapshots();
 
