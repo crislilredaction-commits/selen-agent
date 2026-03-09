@@ -32,7 +32,10 @@ jobs:
         run: npx tsx scripts/selen-agent.ts
 
       - name: Enrich prospects
-        run: npx tsx scripts/enrich-prospects-v3.ts
+        run: npx tsx scripts/enrich-prospects-V3.ts
 
       - name: Purge prospects
         run: npx tsx scripts/purge-prospects.ts
+
+      - name: Send followups
+        run: npx tsx scripts/send-followups.ts
