@@ -5,6 +5,7 @@ export default async function ProspectsPage() {
   const { data: prospects } = await supabase
     .from("prospects")
     .select("*")
+    .or("email_found.not.is.null,email.not.is.null")
     .order("created_at", { ascending: false });
 
   return (
