@@ -13,10 +13,9 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Selen",
-  description: "Selen Editions",
+  title: "Sélion",
   icons: {
-    icon: "/logo-selen.png",
+    icon: "/favicon.ico",
   },
 };
 
