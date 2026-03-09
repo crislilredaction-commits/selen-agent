@@ -212,62 +212,12 @@ export async function sendProspectFollowupEmail({
   });
 }
 
-export async function sendProspectFollowupEmail({
-  to,
-  organizationName,
-  prospectId,
-}: {
-  to: string;
-  organizationName?: string | null;
-  prospectId: string;
-}) {
-  const resend = getResendClient();
-  const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
-
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL BLOQUÉ (mode test)", {
-      to,
-      subject: "Je me permets de vous relancer 🙂",
-    });
-    return { blocked: true };
-  }
-
-  return await resend.emails.send({
-    from: "Selion ✨ <hello@selen-editions.fr>",
-    to,
-    subject: "Je me permets de vous relancer 🙂",
-    html: `
-      <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
-
-      <p>Je me permets de revenir vers vous concernant mon précédent message au sujet de votre numéro de déclaration d’activité.</p>
-
-      <p>Beaucoup de nouveaux organismes de formation découvrent seulement après coup certains points administratifs importants.</p>
-
-      <p>Pour vous aider à faire le point, nous avons préparé un mini diagnostic gratuit :</p>
-
-      <p style="margin:20px 0;">
-        <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
-          Répondre au questionnaire 🔮
-        </a>
-      </p>
-
-      <p>Cela prend environ 2 minutes et permet d’identifier rapidement les points déjà en place et ceux qui méritent d’être sécurisés.</p>
-
-      <p>À bientôt,<br>
-      <strong>Sélion ✨</strong><br>
-      Selen Editions</p>
-
-      <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-top:20px;" />
-    `,
-  });
-}
-
 export async function sendTestEmail() {
   const resend = getResendClient();
 
   return await resend.emails.send({
     from: "Selion ✨ <selion@selen-editions.fr>",
-    to: ["crisli.redaction@gmail.com"],
+    to: ["crislil.redaction@gmail.com"],
     subject: "Test Selion ✨",
     html: `<p>Test email Selion ✨</p>`,
   });
