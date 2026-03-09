@@ -121,7 +121,7 @@ export default async function Home() {
 
             {(recentProspects ?? []).length === 0 ? (
               <p className="mt-4 text-amber-200/70">
-                Aucun prospect avec email trouvé pour le moment.
+                Aucun prospect contactable pour le moment.
               </p>
             ) : (
               <div className="mt-5 overflow-hidden rounded-2xl border border-amber-900/40">
@@ -135,7 +135,7 @@ export default async function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    (recentProspects ?? []).map((prospect) => (
+                    {(recentProspects ?? []).map((prospect) => (
                       <tr
                         key={prospect.id}
                         className="border-t border-amber-900/30 bg-[#201813]/80 hover:bg-[#2b211b] cursor-pointer"
