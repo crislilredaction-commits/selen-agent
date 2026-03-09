@@ -4,19 +4,23 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { parse } from "csv-parse/sync";
 
-console.log("SUPABASE URL =", process.env.NEXT_PUBLIC_SUPABASE_URL);
-console.log(
-  "SERVICE ROLE =",
-  process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 20),
-);
-console.log("CSV URL =", process.env.NDA_CSV_URL);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const NDA_CSV_URL = process.env.NDA_CSV_URL;
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+if (!supabaseUrl) {
+  throw new Error("NEXT_PUBLIC_SUPABASE_URL manquant");
+}
 
-const NDA_CSV_URL = process.env.NDA_CSV_URL!;
+if (!serviceRoleKey) {
+  throw new Error("SUPABASE_SERVICE_ROLE_KEY manquant");
+}
+
+if (!NDA_CSV_URL) {
+  throw new Error("NDA_CSV_URL manquant");
+}
+
+const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 type CsvRow = Record<string, string>;
 
@@ -43,8 +47,6 @@ function isValidOrganization(row: {
   if (!row.city) return false;
 
   const siret = onlyDigits(row.siret);
-
-  // SIRET doit faire 14 chiffres
   if (!siret || siret.length !== 14) return false;
 
   return true;
@@ -63,13 +65,7 @@ function getTodayParis(): string {
 function getYesterdayParis(): string {
   const now = new Date();
   const parisNow = new Date(
-    new Intl.DateTimeFormat("sv-SE", {
-      timeZone: "Europe/Paris",
-      dateStyle: "short",
-      timeStyle: "medium",
-    })
-      .format(now)
-      .replace(" ", "T"),
+    now.toLocaleString("en-US", { timeZone: "Europe/Paris" }),
   );
   parisNow.setDate(parisNow.getDate() - 1);
 
@@ -83,12 +79,14 @@ function getYesterdayParis(): string {
 
 function guessField(row: CsvRow, candidates: string[]): string {
   const entries = Object.entries(row);
+
   for (const candidate of candidates) {
     const found = entries.find(([key]) =>
       normalizeText(key).includes(normalizeText(candidate)),
     );
     if (found) return found[1] ?? "";
   }
+
   return "";
 }
 
@@ -132,7 +130,35 @@ function buildComparisonKey(item: {
   return `ORG:${normalizeText(item.organization_name)}::CITY:${normalizeText(item.city)}`;
 }
 
+async function fetchCsvWithTimeout(
+  url: string,
+  timeoutMs = 60000,
+): Promise<string> {
+  console.log("1. Téléchargement du CSV...");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    console.log("2. Réponse reçue :", response.status);
+
+    if (!response.ok) {
+      throw new Error(`Téléchargement CSV impossible: ${response.status}`);
+    }
+
+    const csvText = await response.text();
+    console.log("3. CSV téléchargé, longueur =", csvText.length);
+
+    return csvText;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function main() {
+  console.log("radar-nda.ts démarrage");
+
   const today = getTodayParis();
   const yesterday = getYesterdayParis();
 
@@ -156,17 +182,9 @@ async function main() {
   const runId = runInsert.data.id;
 
   try {
-    console.log("1. Téléchargement du CSV...");
-    const response = await fetch(NDA_CSV_URL);
-    console.log("2. Réponse reçue :", response.status);
+    const csvText = await fetchCsvWithTimeout(NDA_CSV_URL);
 
-    if (!response.ok) {
-      throw new Error(`Téléchargement CSV impossible: ${response.status}`);
-    }
-
-    const csvText = await response.text();
-    console.log("3. CSV téléchargé, longueur =", csvText.length);
-
+    console.log("4. Parsing CSV...");
     const records = parse(csvText, {
       columns: true,
       skip_empty_lines: true,
@@ -174,14 +192,15 @@ async function main() {
       delimiter: ";",
       relax_column_count: true,
     }) as CsvRow[];
-    console.log("4. CSV parsé, lignes =", records.length);
+
+    console.log("5. CSV parsé, lignes =", records.length);
 
     const extracted = records
       .map(extractRowData)
       .filter((row) => isValidOrganization(row));
 
-    console.log("5. Lignes exploitables =", extracted.length);
-    console.log("6. Exemple ligne =", extracted[0]);
+    console.log("6. Lignes exploitables =", extracted.length);
+    console.log("7. Exemple ligne =", extracted[0]);
 
     const uniqueMap = new Map<
       string,
@@ -211,8 +230,7 @@ async function main() {
     }
 
     const snapshotRows = Array.from(uniqueMap.values());
-
-    console.log("6b. Lignes uniques à snapshotter =", snapshotRows.length);
+    console.log("8. Lignes uniques à snapshotter =", snapshotRows.length);
 
     if (snapshotRows.length > 0) {
       const batchSize = 1000;
@@ -242,13 +260,15 @@ async function main() {
       .select("siret, organization_name, city")
       .eq("snapshot_date", yesterday);
 
-    console.log("7. Lignes snapshot veille =", (yesterdayRows ?? []).length);
+    if (yesterdayError) {
+      throw new Error(yesterdayError.message);
+    }
 
-    const yesterdayCount = (yesterdayRows ?? []).length;
+    console.log("9. Lignes snapshot veille =", (yesterdayRows ?? []).length);
 
-    if (yesterdayCount === 0) {
+    if ((yesterdayRows ?? []).length === 0) {
       console.log(
-        "8. Aucun snapshot de veille : initialisation uniquement, aucun prospect créé.",
+        "10. Aucun snapshot de veille : initialisation uniquement, aucun prospect créé.",
       );
 
       await supabase
@@ -263,7 +283,7 @@ async function main() {
       await supabase.from("robot_logs").insert({
         run_type: "nda_import",
         level: "info",
-        message: `Initialisation NDA terminée : ${extracted.length} lignes snapshotées, aucun prospect créé (pas de veille disponible).`,
+        message: `Initialisation NDA terminée : ${extracted.length} lignes snapshotées, aucun prospect créé.`,
         details: {
           import_date: today,
           total: extracted.length,
@@ -272,11 +292,7 @@ async function main() {
       });
 
       console.log("Import bootstrap OK.");
-      process.exit(0);
-    }
-
-    if (yesterdayError) {
-      throw new Error(yesterdayError.message);
+      return;
     }
 
     const yesterdayKeys = new Set(
@@ -289,40 +305,60 @@ async function main() {
       ),
     );
 
-    console.log("8. Clés veille prêtes =", yesterdayKeys.size);
+    console.log("11. Clés veille prêtes =", yesterdayKeys.size);
 
     const newOrganizations = extracted.filter((row) => {
       const key = buildComparisonKey(row);
       return !yesterdayKeys.has(key);
     });
 
+    console.log("12. Nouveaux OF potentiels =", newOrganizations.length);
+
+    const ndaNumbers = newOrganizations
+      .map((org) => org.nda_number)
+      .filter(Boolean);
+
+    let existingNdaSet = new Set<string>();
+
+    if (ndaNumbers.length > 0) {
+      const { data: existingByNda, error: existingByNdaError } = await supabase
+        .from("prospects")
+        .select("nda_number")
+        .in("nda_number", ndaNumbers);
+
+      if (existingByNdaError) {
+        throw new Error(existingByNdaError.message);
+      }
+
+      existingNdaSet = new Set(
+        (existingByNda ?? [])
+          .map((row) => row.nda_number)
+          .filter((value): value is string => Boolean(value)),
+      );
+    }
+
     let rowsNew = 0;
+    const prospectsToInsert: Array<{
+      source: string;
+      organization_name: string;
+      siret: string | null;
+      nda_number: string | null;
+      city: string | null;
+      status: string;
+    }> = [];
 
-    for (const org of newOrganizations) {
-      let existing;
+    for (let i = 0; i < newOrganizations.length; i++) {
+      const org = newOrganizations[i];
 
-      if (org.siret) {
-        existing = await supabase
-          .from("prospects")
-          .select("id")
-          .eq("siret", org.siret)
-          .limit(1);
-      } else {
-        existing = await supabase
-          .from("prospects")
-          .select("id")
-          .eq("organization_name", org.organization_name)
-          .eq("city", org.city || "")
-          .limit(1);
+      if (i % 100 === 0) {
+        console.log(`Traitement ligne ${i} / ${newOrganizations.length}`);
       }
 
-      if (existing.error) {
-        throw new Error(existing.error.message);
+      if (org.nda_number && existingNdaSet.has(org.nda_number)) {
+        continue;
       }
 
-      if ((existing.data ?? []).length > 0) continue;
-
-      const insertProspect = await supabase.from("prospects").insert({
+      prospectsToInsert.push({
         source: "of_public_list",
         organization_name: org.organization_name,
         siret: org.siret || null,
@@ -331,11 +367,27 @@ async function main() {
         status: "new",
       });
 
-      if (insertProspect.error) {
-        throw new Error(insertProspect.error.message);
-      }
-
       rowsNew += 1;
+    }
+
+    console.log("13. Prospects à insérer =", prospectsToInsert.length);
+
+    if (prospectsToInsert.length > 0) {
+      const batchSize = 500;
+
+      for (let i = 0; i < prospectsToInsert.length; i += batchSize) {
+        const batch = prospectsToInsert.slice(i, i + batchSize);
+
+        const insertProspect = await supabase.from("prospects").insert(batch);
+
+        if (insertProspect.error) {
+          throw new Error(insertProspect.error.message);
+        }
+
+        console.log(
+          `Prospects insérés : ${Math.min(i + batch.length, prospectsToInsert.length)} / ${prospectsToInsert.length}`,
+        );
+      }
     }
 
     const purgeDate = new Date(today);

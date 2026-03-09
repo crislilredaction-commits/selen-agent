@@ -17,7 +17,7 @@ if (!serviceRoleKey) {
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-function runScript(script: string): Promise<void> {
+function runScript(script: string, timeoutMs = 15 * 60 * 1000): Promise<void> {
   return new Promise((resolve, reject) => {
     console.log(`\n--- Lancement ${script} ---`);
 
@@ -26,6 +26,12 @@ function runScript(script: string): Promise<void> {
       shell: true,
       env: process.env,
     });
+
+    const timeout = setTimeout(() => {
+      console.error(`\n--- Timeout ${script} après ${timeoutMs / 1000}s ---`);
+      child.kill("SIGTERM");
+      reject(new Error(`${script} timeout`));
+    }, timeoutMs);
 
     child.stdout.on("data", (data) => {
       process.stdout.write(data.toString());
@@ -36,10 +42,13 @@ function runScript(script: string): Promise<void> {
     });
 
     child.on("error", (error) => {
+      clearTimeout(timeout);
       reject(error);
     });
 
     child.on("close", (code) => {
+      clearTimeout(timeout);
+
       if (code === 0) {
         console.log(`\n--- Fin ${script} ---`);
         resolve();
