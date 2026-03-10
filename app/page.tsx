@@ -24,15 +24,32 @@ function StatusBadge({ status }: { status: string | null }) {
   );
 }
 
+function getTodayParisStartIso() {
+  const todayParis = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  return `${todayParis}T00:00:00+01:00`;
+}
+
 export default async function Home() {
+  const startOfTodayParis = getTodayParisStartIso();
+
   const { count: prospectsCount, error: prospectsCountError } = await supabase
     .from("prospects")
-    .select("*", { count: "exact", head: true });
+    .select("*", { count: "exact", head: true })
+    .eq("source", "selion_1_nda")
+    .eq("is_visible", true);
 
   const { count: contactableCount, error: contactableCountError } =
     await supabase
       .from("prospects")
       .select("*", { count: "exact", head: true })
+      .eq("source", "selion_1_nda")
+      .eq("is_visible", true)
       .or("email_found.not.is.null,email.not.is.null");
 
   const { data: recentProspects, error: recentProspectsError } = await supabase
@@ -40,12 +57,19 @@ export default async function Home() {
     .select(
       "id, organization_name, email, email_found, status, prospect_type, first_email_status, created_at",
     )
+    .eq("source", "selion_1_nda")
+    .eq("is_visible", true)
     .or("email_found.not.is.null,email.not.is.null")
+    .gte("created_at", startOfTodayParis)
     .order("created_at", { ascending: false })
     .limit(8);
 
   const { data: allProspectsForStatuses, error: prospectsError } =
-    await supabase.from("prospects").select("id, status, first_email_status");
+    await supabase
+      .from("prospects")
+      .select("id, status, first_email_status")
+      .eq("source", "selion_1_nda")
+      .eq("is_visible", true);
 
   const { data: meetings, error: meetingsError } = await supabase
     .from("meetings")
@@ -72,6 +96,13 @@ export default async function Home() {
     revenue,
   };
 
+  const dashboardError =
+    prospectsCountError ||
+    contactableCountError ||
+    recentProspectsError ||
+    prospectsError ||
+    meetingsError;
+
   return (
     <main className="min-h-screen bg-[#1a1410] text-amber-50">
       <div className="fixed right-6 top-6 w-[220px]">
@@ -89,19 +120,23 @@ export default async function Home() {
 
         <div className="mt-2 flex items-center justify-between gap-4">
           <p className="text-amber-200/70">
-            Agent de prospection automatique pour Selen Editions
+            File active Sélion 1 — nouveaux NDA visibles et exploitables
           </p>
         </div>
 
-        {(prospectsError || meetingsError) && (
+        {dashboardError && (
           <div className="mt-6 rounded-2xl border border-red-900/40 bg-red-950/20 p-4 text-red-200">
             Erreur Supabase :{" "}
-            {prospectsError?.message || meetingsError?.message}
+            {prospectsCountError?.message ||
+              contactableCountError?.message ||
+              recentProspectsError?.message ||
+              prospectsError?.message ||
+              meetingsError?.message}
           </div>
         )}
 
         <section className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard title="Prospects détectés" value={stats.prospects} />
+          <StatCard title="Prospects visibles" value={stats.prospects} />
           <StatCard title="Prospects contactables" value={stats.contactable} />
           <StatCard title="Emails envoyés" value={stats.contacted} />
           <StatCard title="Réponses reçues" value={stats.replies} />
@@ -114,7 +149,7 @@ export default async function Home() {
         <section className="mt-8 grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-3xl border border-amber-800/30 bg-[#241b15]/85 p-6 shadow-xl">
             <h2 className="text-2xl font-semibold text-amber-100">
-              Prospects contactables récents
+              Prospects contactables du jour
             </h2>
 
             <div className="mt-4">
@@ -122,13 +157,13 @@ export default async function Home() {
                 href="/prospects"
                 className="inline-block rounded-xl bg-amber-200/80 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
               >
-                Voir tous les prospects
+                Voir les prospects Sélion 1
               </Link>
             </div>
 
             {(recentProspects ?? []).length === 0 ? (
               <p className="mt-4 text-amber-200/70">
-                Aucun prospect contactable pour le moment.
+                Aucun prospect contactable visible aujourd’hui.
               </p>
             ) : (
               <div className="mt-5 overflow-hidden rounded-2xl border border-amber-900/40">
@@ -145,7 +180,7 @@ export default async function Home() {
                     {(recentProspects ?? []).map((prospect) => (
                       <tr
                         key={prospect.id}
-                        className="border-t border-amber-900/30 bg-[#201813]/80 hover:bg-[#2b211b] cursor-pointer"
+                        className="cursor-pointer border-t border-amber-900/30 bg-[#201813]/80 hover:bg-[#2b211b]"
                       >
                         <td className="px-4 py-3 text-amber-100">
                           <Link
@@ -188,19 +223,19 @@ export default async function Home() {
 
             <div className="mt-4 space-y-3 text-sm text-amber-200/80">
               <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
-                Sélion est prêt à détecter les nouveaux organismes de formation.
+                Sélion suit uniquement la file active visible de Robot 1.
               </div>
 
               <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
                 {stats.prospects === 0
-                  ? "Aucun prospect en base pour le moment."
-                  : `${stats.prospects} prospect(s) actuellement enregistrés.`}
+                  ? "Aucun prospect visible dans la file active pour le moment."
+                  : `${stats.prospects} prospect(s) visible(s) actuellement dans la file active.`}
               </div>
 
               <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
                 {stats.contactable === 0
-                  ? "Aucun prospect contactable pour le moment."
-                  : `${stats.contactable} prospect(s) contactable(s).`}
+                  ? "Aucun prospect contactable visible pour le moment."
+                  : `${stats.contactable} prospect(s) contactable(s) visible(s).`}
               </div>
 
               <div className="rounded-xl border border-amber-900/40 bg-[#2b211b] p-3">
@@ -215,6 +250,7 @@ export default async function Home() {
         <section className="mt-8">
           <MeetingsSalesManager />
         </section>
+
         <section className="mt-8">
           <DashboardReminders />
         </section>

@@ -349,12 +349,28 @@ async function extractContacts(
 async function main() {
   console.log("Robot enrichissement V4 démarrage");
 
+  const todayParis = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const todayParis = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
   const { data: prospects } = await supabase
     .from("prospects")
     .select("*")
     .eq("source", "selion_1_nda")
     .eq("is_visible", true)
+    .is("email_found", null)
     .in("enrichment_status", ["pending", "error"])
+    .gte("created_at", `${todayParis}T00:00:00+01:00`)
     .order("created_at", { ascending: false })
     .limit(ENRICHMENT_BATCH_SIZE);
 

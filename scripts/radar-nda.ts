@@ -349,6 +349,7 @@ async function main() {
       nda_number: string | null;
       city: string | null;
       status: string;
+      is_visible: boolean;
     }> = [];
 
     for (let i = 0; i < newOrganizations.length; i++) {
@@ -369,6 +370,7 @@ async function main() {
         nda_number: org.nda_number || null,
         city: org.city || null,
         status: "new",
+        is_visible: true,
       });
 
       rowsNew += 1;

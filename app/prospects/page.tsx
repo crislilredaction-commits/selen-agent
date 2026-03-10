@@ -65,7 +65,7 @@ export default async function ProspectsPage({
   const search = (resolvedSearchParams.search ?? "").trim();
   const selectedType = (resolvedSearchParams.type ?? "").trim();
   const selectedStatus = (resolvedSearchParams.status ?? "").trim();
-  const selectedDate = (resolvedSearchParams.date ?? "").trim();
+  const selectedDate = (resolvedSearchParams.date ?? "today").trim();
   const currentPage = Math.max(
     1,
     Number(resolvedSearchParams.page ?? "1") || 1,
@@ -74,6 +74,7 @@ export default async function ProspectsPage({
   let query = supabase
     .from("prospects")
     .select("*", { count: "exact" })
+    .eq("source", "selion_1_nda")
     .eq("is_visible", true)
     .or("email_found.not.is.null,email.not.is.null")
     .order("created_at", { ascending: false });
@@ -87,9 +88,14 @@ export default async function ProspectsPage({
   }
 
   if (selectedDate === "today") {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    query = query.gte("created_at", startOfToday.toISOString());
+    const todayParis = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Paris",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    query = query.gte("created_at", `${todayParis}T00:00:00+01:00`);
   }
 
   if (selectedStatus === "email_envoye") {
@@ -125,11 +131,11 @@ export default async function ProspectsPage({
       </div>
 
       <h1 className="mb-2 text-3xl font-bold text-amber-100">
-        Tous les prospects
+        Prospects contactables — Sélion 1
       </h1>
 
       <p className="mb-6 text-sm text-amber-200/70">
-        {totalResults} prospect(s) avec email trouvé.
+        {totalResults} prospect(s) contactable(s) détecté(s).
       </p>
 
       {error ? (

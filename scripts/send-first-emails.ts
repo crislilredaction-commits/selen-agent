@@ -39,6 +39,7 @@ async function main() {
     .eq("needs_human_validation", false)
     .eq("manual_review_needed", false)
     .is("last_contact_at", null)
+    .gte("created_at", `${todayParis}T00:00:00+01:00`)
     .or(
       "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
     )
