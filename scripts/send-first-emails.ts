@@ -27,17 +27,21 @@ function sleep(ms: number) {
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
 
-  const startOfTodayParis = new Date();
-  startOfTodayParis.setHours(0, 0, 0, 0);
-
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select(
-      "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type, created_at",
+      "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type, created_at, auto_send_allowed, needs_human_validation, manual_review_needed, last_contact_at, source",
     )
     .eq("is_visible", true)
+    .eq("source", "of_public_list")
     .eq("prospect_type", "nouvel_entrant")
-    .or("first_email_status.is.null,first_email_status.eq.not_sent")
+    .eq("auto_send_allowed", true)
+    .eq("needs_human_validation", false)
+    .eq("manual_review_needed", false)
+    .is("last_contact_at", null)
+    .or(
+      "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
+    )
     .order("created_at", { ascending: false })
     .limit(DAILY_SEND_LIMIT);
 
@@ -50,6 +54,7 @@ async function main() {
     return !!email;
   });
 
+  console.log(`Prospects récupérés : ${(prospects ?? []).length}`);
   console.log(`Prospects à contacter : ${candidates.length}`);
 
   for (const prospect of candidates) {
@@ -74,7 +79,9 @@ async function main() {
           first_email_status: "sending",
         })
         .eq("id", prospect.id)
-        .or("first_email_status.is.null,first_email_status.eq.not_sent");
+        .or(
+          "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
+        );
 
       if (markSendingError) {
         throw new Error(markSendingError.message);
@@ -85,10 +92,9 @@ async function main() {
         organizationName: prospect.organization_name,
         prospectId: prospect.id,
       });
-      const delay = 120000 + Math.floor(Math.random() * 120000);
-      await sleep(delay);
 
       const now = new Date().toISOString();
+
       const followupDate = new Date(
         Date.now() + 7 * 24 * 60 * 60 * 1000,
       ).toISOString();
@@ -100,7 +106,7 @@ async function main() {
           first_outreach_sent_at: now,
           questionnaire_status: "sent",
           questionnaire_last_sent_at: now,
-          last_contacted_at: now,
+          last_contact_at: now,
           next_followup_due_at: followupDate,
           workflow_status: "questionnaire_sent",
           status: "contacted",
@@ -131,6 +137,9 @@ async function main() {
       if (logError) {
         console.error("Erreur log message :", logError.message);
       }
+
+      const delay = 120000 + Math.floor(Math.random() * 120000);
+      await sleep(delay);
     } catch (err) {
       console.error(`Erreur envoi ${email}:`, err);
 
