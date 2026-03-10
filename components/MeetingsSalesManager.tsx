@@ -11,6 +11,11 @@ type MeetingRow = {
   sale_amount: number | null;
 };
 
+type ProspectRow = {
+  id: string;
+  organization_name: string | null;
+};
+
 type NewMeetingForm = {
   prospect_id: string;
   meeting_status: string;

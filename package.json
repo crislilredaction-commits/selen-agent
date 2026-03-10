@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "nda-radar": "tsx scripts/fetch-nda.ts",
+    "nda-enrich": "tsx scripts/enrich-prospects.ts",
+    "send-first-emails": "tsx scripts/send-first-emails.ts",
+    "send-followups": "tsx scripts/send-followups.ts"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.15.0",
