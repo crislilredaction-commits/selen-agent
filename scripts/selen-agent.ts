@@ -18,7 +18,7 @@ const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-function runScript(script: string, timeoutMs = 15 * 60 * 1000): Promise<void> {
+function runScript(script: string, timeoutMs = 45 * 60 * 1000): Promise<void> {
   return new Promise((resolve, reject) => {
     console.log(`\n--- Lancement ${script} ---`);
 
