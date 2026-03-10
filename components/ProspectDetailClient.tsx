@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import ProspectSpellbook from "./ProspectSpellbook";
 
 type Prospect = {
   id: string;
@@ -69,6 +70,112 @@ type Props = {
   reminders: Reminder[];
 };
 
+type ActiveTab = "overview" | "questionnaire" | "history";
+
+type OrderOfferKey =
+  | "selen_review"
+  | "selen_prepa"
+  | "selen_daily"
+  | "selen_news"
+  | "selen_studio";
+
+const ORDER_OFFERS: Record<
+  OrderOfferKey,
+  { label: string; price: string; shortDescription: string }
+> = {
+  selen_review: {
+    label: "Selen Review",
+    price: "397 €",
+    shortDescription: "Audit blanc Qualiopi",
+  },
+  selen_prepa: {
+    label: "Selen Prepa",
+    price: "900 €",
+    shortDescription: "Système administratif conforme clé en main",
+  },
+  selen_daily: {
+    label: "Selen Daily",
+    price: "9 € / apprenant",
+    shortDescription: "Gestion administrative quotidienne avec agent dédié",
+  },
+  selen_news: {
+    label: "Selen News",
+    price: "7 € / mois",
+    shortDescription: "Outil de veille",
+  },
+  selen_studio: {
+    label: "Selen Studio",
+    price: "59 € / mois",
+    shortDescription: "Plateforme complète",
+  },
+};
+
+function getOfferKeyFromRecommendedOffer(
+  value: string | null | undefined,
+): OrderOfferKey {
+  const normalized = (value || "").toLowerCase();
+
+  if (normalized.includes("daily")) return "selen_daily";
+  if (normalized.includes("news")) return "selen_news";
+  if (normalized.includes("studio")) return "selen_studio";
+  if (normalized.includes("review") || normalized.includes("audit blanc")) {
+    return "selen_review";
+  }
+  if (
+    normalized.includes("prepa") ||
+    normalized.includes("prépa") ||
+    normalized.includes("qualiopi")
+  ) {
+    return "selen_prepa";
+  }
+
+  return "selen_review";
+}
+
+function getOfferKeyFromCallOutcome(
+  value: string | null | undefined,
+): OrderOfferKey {
+  switch (value) {
+    case "won_audit_blanc":
+      return "selen_review";
+    case "won_preparation_qualiopi":
+    case "won_preparation_nda":
+      return "selen_prepa";
+    case "won_gestion_quotidienne":
+      return "selen_daily";
+    default:
+      return "selen_review";
+  }
+}
+
+function buildOrderMessage(params: {
+  organizationName: string;
+  offerKey: OrderOfferKey;
+  paymentProvider: string;
+  paymentLink: string;
+  amount?: string;
+}) {
+  const offer = ORDER_OFFERS[params.offerKey];
+
+  return `Bonjour,
+
+Suite à notre échange, voici votre bon de commande pour ${offer.label}.
+
+Prestation :
+${offer.label} — ${offer.shortDescription}
+
+Tarif :
+${params.amount || offer.price}
+
+Lien de paiement ${params.paymentProvider === "paypal" ? "PayPal" : "Stripe"} :
+${params.paymentLink || "[à compléter]"}
+
+N’hésitez pas à revenir vers nous si vous avez la moindre question.
+
+Bien cordialement,
+Romaric`;
+}
+
 const SALE_OUTCOMES = new Set([
   "won_audit_blanc",
   "won_preparation_qualiopi",
@@ -88,7 +195,7 @@ function parseTallyResponses(
 
   const fields = data.data.fields;
 
-  const results = fields
+  return fields
     .filter((f: any) => f.type !== "HIDDEN_FIELDS")
     .map((field: any) => {
       let answer = field.value;
@@ -111,8 +218,6 @@ function parseTallyResponses(
         answer: answer || "—",
       };
     });
-
-  return results;
 }
 
 function cardTitle(title: string) {
@@ -124,7 +229,118 @@ function cardTitle(title: string) {
 }
 
 function inputClass() {
-  return "w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-2 text-sm text-amber-100 placeholder:text-amber-200/40";
+  return "w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-2 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50";
+}
+
+function panelClass() {
+  return "rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg";
+}
+
+function miniCardClass() {
+  return "rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80";
+}
+
+function actionButtonClass(variant: "primary" | "secondary" = "secondary") {
+  if (variant === "primary") {
+    return "rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-amber-600 transition";
+  }
+
+  return "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2.5 text-sm text-amber-100 hover:bg-[#3a2c24] transition";
+}
+
+function getWorkflowLabel(value: string | null) {
+  switch (value) {
+    case "new":
+      return "Nouveau";
+    case "questionnaire_sent":
+      return "Questionnaire envoyé";
+    case "waiting_reply":
+      return "En attente réponse";
+    case "followup_sent":
+      return "Relance envoyée";
+    case "questionnaire_completed":
+      return "Questionnaire rempli";
+    case "offer_sent":
+      return "Offre envoyée";
+    case "meeting_booked":
+      return "RDV pris";
+    case "closed_no_reply":
+      return "Clos sans réponse";
+    case "closed_won":
+      return "Clos gagné";
+    case "closed_lost":
+      return "Clos perdu";
+    default:
+      return value || "—";
+  }
+}
+
+function getProspectTypeLabel(value: string | null) {
+  switch (value) {
+    case "nouvel_entrant":
+      return "Nouvel entrant";
+    case "qp_ok":
+      return "QP OK";
+    case "no_nda":
+      return "No NDA";
+    default:
+      return value || "—";
+  }
+}
+
+function getQualiopiLabel(value: string | null) {
+  switch (value) {
+    case "unknown":
+      return "Qualiopi inconnu";
+    case "certified":
+      return "Certifié";
+    case "not_certified":
+      return "Non certifié";
+    default:
+      return value || "—";
+  }
+}
+
+function getChannelLabel(value: string | null) {
+  switch (value) {
+    case "email":
+      return "Email";
+    case "facebook":
+      return "Facebook";
+    case "whatsapp":
+      return "WhatsApp";
+    case "linkedin":
+      return "LinkedIn";
+    case "phone":
+      return "Téléphone";
+    case "none":
+      return "Aucun";
+    default:
+      return value || "—";
+  }
+}
+
+function getCallOutcomeLabel(value: string | null) {
+  switch (value) {
+    case "won_audit_blanc":
+      return "Vente Selen Review";
+    case "won_preparation_qualiopi":
+      return "Vente Selen Prepa";
+    case "won_preparation_nda":
+      return "Vente Selen Prepa";
+    case "won_gestion_quotidienne":
+      return "Vente Selen Daily";
+    case "needs_followup_call":
+      return "Nécessite un nouvel appel";
+    case "not_interested":
+      return "Pas intéressé";
+    case "no_answer":
+      return "Injoignable / sans retour";
+    case "other":
+      return "Autre";
+    default:
+      return value || "—";
+  }
 }
 
 export default function ProspectDetailClient({
@@ -134,6 +350,12 @@ export default function ProspectDetailClient({
   reminders,
 }: Props) {
   const firstMeeting = meetings[0] ?? null;
+  const questionnaireItems = useMemo(
+    () => parseTallyResponses(prospect.questionnaire_response_json),
+    [prospect.questionnaire_response_json],
+  );
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
 
   const [form, setForm] = useState({
     organization_name: prospect.organization_name ?? "",
@@ -174,10 +396,77 @@ export default function ProspectDetailClient({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
 
+  const [showQuickEmail, setShowQuickEmail] = useState(false);
+  const [showOrderPanel, setShowOrderPanel] = useState(false);
+  const [showSpellbook, setShowSpellbook] = useState(false);
+
+  const [quickEmailRecipient, setQuickEmailRecipient] = useState(
+    prospect.email_found ?? prospect.email ?? "",
+  );
+  const [quickEmailSubject, setQuickEmailSubject] = useState("");
+  const [quickEmailBody, setQuickEmailBody] = useState("");
+
+  const [orderOffer, setOrderOffer] = useState<OrderOfferKey>(
+    getOfferKeyFromRecommendedOffer(prospect.recommended_offer_primary),
+  );
+  const [orderAmount, setOrderAmount] = useState(
+    ORDER_OFFERS[
+      getOfferKeyFromRecommendedOffer(prospect.recommended_offer_primary)
+    ].price,
+  );
+  const [orderPaymentProvider, setOrderPaymentProvider] = useState<
+    "stripe" | "paypal"
+  >("stripe");
+  const [orderPaymentLink, setOrderPaymentLink] = useState("");
+  const [orderRecipientEmail, setOrderRecipientEmail] = useState(
+    prospect.email_found ?? prospect.email ?? "",
+  );
+  const [orderMessage, setOrderMessage] = useState(
+    buildOrderMessage({
+      organizationName: prospect.organization_name ?? "votre organisme",
+      offerKey: getOfferKeyFromRecommendedOffer(
+        prospect.recommended_offer_primary,
+      ),
+      paymentProvider: "stripe",
+      paymentLink: "",
+      amount:
+        ORDER_OFFERS[
+          getOfferKeyFromRecommendedOffer(prospect.recommended_offer_primary)
+        ].price,
+    }),
+  );
+
   const isSaleOutcome = useMemo(
     () => SALE_OUTCOMES.has(callOutcome),
     [callOutcome],
   );
+
+  useEffect(() => {
+    const suggestedOffer = isSaleOutcome
+      ? getOfferKeyFromCallOutcome(callOutcome)
+      : getOfferKeyFromRecommendedOffer(prospect.recommended_offer_primary);
+
+    setOrderOffer(suggestedOffer);
+  }, [callOutcome, isSaleOutcome, prospect.recommended_offer_primary]);
+
+  useEffect(() => {
+    setOrderAmount(ORDER_OFFERS[orderOffer].price);
+    setOrderMessage(
+      buildOrderMessage({
+        organizationName: prospect.organization_name ?? "votre organisme",
+        offerKey: orderOffer,
+        paymentProvider: orderPaymentProvider,
+        paymentLink: orderPaymentLink,
+        amount: orderAmount,
+      }),
+    );
+  }, [
+    orderOffer,
+    orderPaymentProvider,
+    orderPaymentLink,
+    orderAmount,
+    prospect.organization_name,
+  ]);
 
   function updateField(name: string, value: string) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -328,6 +617,212 @@ export default function ProspectDetailClient({
     setSaving(false);
   }
 
+  async function saveOrderDraft() {
+    setSaving(true);
+    setFeedback("");
+
+    const selectedOffer = ORDER_OFFERS[orderOffer];
+    const subject = `Bon de commande - ${selectedOffer.label}`;
+
+    const { error: messageError } = await supabase
+      .from("prospect_messages")
+      .insert({
+        prospect_id: prospect.id,
+        channel: "email",
+        direction: "draft",
+        message_type: "order_form",
+        subject,
+        body: `Destinataire : ${orderRecipientEmail || "—"}
+
+${orderMessage}`,
+        delivery_status: "draft",
+        auto_generated: false,
+        human_validated: true,
+        validation_required: false,
+      });
+
+    if (messageError) {
+      setFeedback(`Erreur bon de commande : ${messageError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const { error: prospectError } = await supabase
+      .from("prospects")
+      .update({
+        workflow_status: "offer_sent",
+        updated_by_human_at: new Date().toISOString(),
+      })
+      .eq("id", prospect.id);
+
+    if (prospectError) {
+      setFeedback(
+        `Brouillon créé, mais statut non mis à jour : ${prospectError.message}`,
+      );
+      setSaving(false);
+      return;
+    }
+
+    setForm((prev) => ({ ...prev, workflow_status: "offer_sent" }));
+    setFeedback(
+      `Bon de commande préparé pour ${selectedOffer.label}. Un brouillon a été ajouté à l’historique.`,
+    );
+    setShowOrderPanel(false);
+    setSaving(false);
+  }
+
+  async function generateStripePaymentLink() {
+    setSaving(true);
+    setFeedback("");
+
+    try {
+      const response = await fetch("/api/create-stripe-payment-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          offerLabel: ORDER_OFFERS[orderOffer].label,
+          amount: orderAmount,
+          prospectId: prospect.id,
+          organizationName: prospect.organization_name ?? "",
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setFeedback(
+          result.error || "Erreur lors de la génération du lien Stripe.",
+        );
+        setSaving(false);
+        return;
+      }
+
+      setOrderPaymentProvider("stripe");
+      setOrderPaymentLink(result.url);
+      setFeedback("Lien Stripe généré.");
+      setSaving(false);
+    } catch (error: any) {
+      setFeedback(
+        error?.message || "Erreur lors de la génération du lien Stripe.",
+      );
+      setSaving(false);
+    }
+  }
+
+  async function sendOrderEmail() {
+    setSaving(true);
+    setFeedback("");
+
+    const selectedOffer = ORDER_OFFERS[orderOffer];
+    const subject = `Bon de commande - ${selectedOffer.label}`;
+
+    if (!orderRecipientEmail.trim()) {
+      setFeedback("Merci de renseigner l’email du destinataire.");
+      setSaving(false);
+      return;
+    }
+
+    if (!orderMessage.trim()) {
+      setFeedback("Le message du bon de commande est vide.");
+      setSaving(false);
+      return;
+    }
+
+    const response = await fetch("/api/send-order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prospectId: prospect.id,
+        recipientEmail: orderRecipientEmail.trim(),
+        subject,
+        message: orderMessage,
+        workflowStatus: "offer_sent",
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      setFeedback(result.error || "Erreur lors de l’envoi du bon de commande.");
+      setSaving(false);
+      return;
+    }
+
+    setForm((prev) => ({ ...prev, workflow_status: "offer_sent" }));
+    setFeedback(`Bon de commande envoyé pour ${selectedOffer.label}.`);
+    setShowOrderPanel(false);
+    setSaving(false);
+  }
+
+  async function sendQuickEmail() {
+    setSaving(true);
+    setFeedback("");
+
+    if (!quickEmailRecipient.trim()) {
+      setFeedback("Merci de renseigner l’email du destinataire.");
+      setSaving(false);
+      return;
+    }
+
+    if (!quickEmailSubject.trim()) {
+      setFeedback("Merci de renseigner l’objet du mail.");
+      setSaving(false);
+      return;
+    }
+
+    if (!quickEmailBody.trim()) {
+      setFeedback("Le message du mail est vide.");
+      setSaving(false);
+      return;
+    }
+
+    const response = await fetch("/api/send-prospect-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prospectId: prospect.id,
+        recipientEmail: quickEmailRecipient.trim(),
+        subject: quickEmailSubject.trim(),
+        message: quickEmailBody.trim(),
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      setFeedback(result.error || "Erreur lors de l’envoi du mail.");
+      setSaving(false);
+      return;
+    }
+
+    setFeedback(`Mail envoyé à ${quickEmailRecipient.trim()}.`);
+    setShowQuickEmail(false);
+    setQuickEmailSubject("");
+    setQuickEmailBody("");
+    setForm((prev) => ({
+      ...prev,
+      workflow_status:
+        prev.workflow_status === "new" ? "followup_sent" : prev.workflow_status,
+    }));
+    setSaving(false);
+  }
+
+  const topBadges = [
+    { label: "Statut", value: getWorkflowLabel(form.workflow_status) },
+    { label: "Type", value: getProspectTypeLabel(form.prospect_type) },
+    { label: "Canal", value: getChannelLabel(form.preferred_contact_channel) },
+    {
+      label: "Offre recommandée",
+      value: prospect.recommended_offer_primary || "—",
+    },
+  ];
+
   return (
     <main className="min-h-screen bg-[#1a1410] p-6 text-amber-50">
       <div className="mb-4 flex gap-3">
@@ -345,398 +840,745 @@ export default function ProspectDetailClient({
           ← Liste prospects
         </Link>
       </div>
-      <h1 className="mb-4 text-2xl font-bold text-amber-100">
-        {form.organization_name || "Prospect"}
-      </h1>
 
-      {feedback && (
-        <div className="mb-4 rounded-xl border border-amber-700/30 bg-[#2b211b] p-3 text-sm text-amber-200">
-          {feedback}
-        </div>
-      )}
+      <section className="mb-4 rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-amber-100">
+              {form.organization_name || "Prospect"}
+            </h1>
 
-      <section className="grid items-start gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
-          {cardTitle("Informations prospect")}
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <input
-              className={inputClass()}
-              value={form.organization_name}
-              onChange={(e) => updateField("organization_name", e.target.value)}
-              placeholder="Nom organisme"
-            />
-            <input
-              className={inputClass()}
-              value={form.email_found}
-              onChange={(e) => updateField("email_found", e.target.value)}
-              placeholder="Email"
-            />
-            <input
-              className={inputClass()}
-              value={form.website_found}
-              onChange={(e) => updateField("website_found", e.target.value)}
-              placeholder="Site web"
-            />
-            <input
-              className={inputClass()}
-              value={form.naf_code}
-              onChange={(e) => updateField("naf_code", e.target.value)}
-              placeholder="Code NAF"
-            />
-            <input
-              className={inputClass()}
-              value={form.training_domain}
-              onChange={(e) => updateField("training_domain", e.target.value)}
-              placeholder="Domaine de formation"
-            />
-            <select
-              className={inputClass()}
-              value={form.prospect_type}
-              onChange={(e) => updateField("prospect_type", e.target.value)}
-            >
-              <option value="nouvel_entrant">Nouvel entrant</option>
-              <option value="qp_ok">QP OK</option>
-              <option value="no_nda">No NDA</option>
-            </select>
-            <input
-              className={inputClass()}
-              value={form.linkedin_url}
-              onChange={(e) => updateField("linkedin_url", e.target.value)}
-              placeholder="LinkedIn"
-            />
-            <input
-              className={inputClass()}
-              value={form.facebook_url}
-              onChange={(e) => updateField("facebook_url", e.target.value)}
-              placeholder="Facebook"
-            />
-            <input
-              className={inputClass()}
-              value={form.whatsapp_url}
-              onChange={(e) => updateField("whatsapp_url", e.target.value)}
-              placeholder="WhatsApp"
-            />
-            <select
-              className={inputClass()}
-              value={form.qualiopi_status}
-              onChange={(e) => updateField("qualiopi_status", e.target.value)}
-            >
-              <option value="unknown">Qualiopi inconnu</option>
-              <option value="certified">Certifié</option>
-              <option value="not_certified">Non certifié</option>
-            </select>
-            <select
-              className={inputClass()}
-              value={form.workflow_status}
-              onChange={(e) => updateField("workflow_status", e.target.value)}
-            >
-              <option value="new">Nouveau</option>
-              <option value="questionnaire_sent">Questionnaire envoyé</option>
-              <option value="waiting_reply">En attente réponse</option>
-              <option value="followup_sent">Relance envoyée</option>
-              <option value="questionnaire_completed">
-                Questionnaire rempli
-              </option>
-              <option value="offer_sent">Offre envoyée</option>
-              <option value="meeting_booked">RDV pris</option>
-              <option value="closed_no_reply">Clos sans réponse</option>
-              <option value="closed_won">Clos gagné</option>
-              <option value="closed_lost">Clos perdu</option>
-            </select>
-            <select
-              className={inputClass()}
-              value={form.preferred_contact_channel}
-              onChange={(e) =>
-                updateField("preferred_contact_channel", e.target.value)
-              }
-            >
-              <option value="email">Email</option>
-              <option value="facebook">Facebook</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="linkedin">LinkedIn</option>
-              <option value="phone">Téléphone</option>
-              <option value="none">Aucun</option>
-            </select>
-          </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-              <strong>Premier email :</strong>{" "}
-              {prospect.first_email_status === "sent" ? "envoyé" : "non envoyé"}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {topBadges.map((badge) => (
+                <span
+                  key={badge.label}
+                  className="rounded-full border border-amber-700/30 bg-[#2b211b] px-3 py-1 text-xs text-amber-200/85"
+                >
+                  <strong className="text-amber-100">{badge.label} :</strong>{" "}
+                  {badge.value}
+                </span>
+              ))}
             </div>
 
-            <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-              <strong>Date envoi :</strong>{" "}
-              {prospect.first_outreach_sent_at
-                ? new Date(prospect.first_outreach_sent_at).toLocaleString()
-                : "—"}
+            <div className="mt-3 grid gap-2 text-sm text-amber-200/75 md:grid-cols-2">
+              <p>
+                <strong className="text-amber-100">Email :</strong>{" "}
+                {form.email_found || "—"}
+              </p>
+              <p>
+                <strong className="text-amber-100">Site :</strong>{" "}
+                {form.website_found || "—"}
+              </p>
+              <p>
+                <strong className="text-amber-100">Qualiopi :</strong>{" "}
+                {getQualiopiLabel(form.qualiopi_status)}
+              </p>
+              <p>
+                <strong className="text-amber-100">Créé le :</strong>{" "}
+                {formatDate(prospect.created_at)}
+              </p>
             </div>
           </div>
 
-          <textarea
-            className="mt-3 min-h-[90px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40"
-            value={form.internal_notes}
-            onChange={(e) => updateField("internal_notes", e.target.value)}
-            placeholder="Notes internes"
-          />
+          <div className="flex flex-wrap gap-2 xl:justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setQuickEmailRecipient(
+                  prospect.email_found ?? prospect.email ?? "",
+                );
+                setShowQuickEmail((prev) => !prev);
+              }}
+              className={actionButtonClass()}
+            >
+              ✉️ Envoyer un mail
+            </button>
 
-          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                const suggestedOffer = isSaleOutcome
+                  ? getOfferKeyFromCallOutcome(callOutcome)
+                  : getOfferKeyFromRecommendedOffer(
+                      prospect.recommended_offer_primary,
+                    );
+
+                setOrderOffer(suggestedOffer);
+                setOrderAmount(ORDER_OFFERS[suggestedOffer].price);
+                setOrderRecipientEmail(
+                  prospect.email_found ?? prospect.email ?? "",
+                );
+                setOrderPaymentProvider("stripe");
+                setOrderPaymentLink("");
+                setOrderMessage(
+                  buildOrderMessage({
+                    organizationName:
+                      prospect.organization_name ?? "votre organisme",
+                    offerKey: suggestedOffer,
+                    paymentProvider: "stripe",
+                    paymentLink: "",
+                    amount: ORDER_OFFERS[suggestedOffer].price,
+                  }),
+                );
+                setShowOrderPanel((prev) => !prev);
+              }}
+              className={actionButtonClass()}
+            >
+              📄 Bon de commande
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowSpellbook((prev) => !prev)}
+              className={actionButtonClass()}
+            >
+              📖 Grimoire
+            </button>
+
             <button
               onClick={saveProspect}
               disabled={saving}
-              className="rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-amber-600 disabled:opacity-50"
+              className={actionButtonClass("primary")}
             >
               Enregistrer la fiche
             </button>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg h-fit">
-          {cardTitle("Conclusion d’appel")}
-
-          <div className="grid gap-3">
-            <select
-              className={inputClass()}
-              value={callOutcome}
-              onChange={(e) => setCallOutcome(e.target.value)}
-            >
-              <option value="">Choisir une conclusion</option>
-              <option value="won_audit_blanc">Vente audit blanc</option>
-              <option value="won_preparation_qualiopi">
-                Vente préparation Qualiopi
-              </option>
-              <option value="won_preparation_nda">Vente préparation NDA</option>
-              <option value="won_gestion_quotidienne">
-                Vente gestion quotidienne
-              </option>
-              <option value="needs_followup_call">
-                Nécessite un nouvel appel
-              </option>
-              <option value="not_interested">Pas intéressé</option>
-              <option value="no_answer">Injoignable / sans retour</option>
-              <option value="other">Autre</option>
-            </select>
-
-            {isSaleOutcome && (
-              <input
-                type="number"
-                min="0"
-                step="1"
-                className={inputClass()}
-                value={saleAmount}
-                onChange={(e) => setSaleAmount(e.target.value)}
-                placeholder="Montant de la vente (€)"
-              />
-            )}
-
-            <textarea
-              className="min-h-[88px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40"
-              value={callSummary}
-              onChange={(e) => setCallSummary(e.target.value)}
-              placeholder="Résumé de l’appel"
-            />
-
-            <label className="flex items-center gap-2 text-sm text-amber-200/80">
-              <input
-                type="checkbox"
-                checked={followupNeeded}
-                onChange={(e) => setFollowupNeeded(e.target.checked)}
-              />
-              Suivi nécessaire
-            </label>
-
-            {followupNeeded && (
-              <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3">
-                <div className="grid gap-3">
-                  <input
-                    className={inputClass()}
-                    value={followupTitle}
-                    onChange={(e) => setFollowupTitle(e.target.value)}
-                    placeholder="Titre du rappel"
-                  />
-                  <textarea
-                    className="min-h-[70px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40"
-                    value={followupNote}
-                    onChange={(e) => setFollowupNote(e.target.value)}
-                    placeholder="Détail du rappel"
-                  />
-                  <input
-                    type="datetime-local"
-                    className={inputClass()}
-                    value={followupDate}
-                    onChange={(e) => setFollowupDate(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            <button
-              onClick={saveCallConclusion}
-              disabled={saving}
-              className="rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-amber-600 disabled:opacity-50"
-            >
-              Enregistrer la conclusion d’appel
-            </button>
+        {feedback && (
+          <div className="mt-4 rounded-xl border border-amber-700/30 bg-[#2b211b] p-3 text-sm text-amber-200">
+            {feedback}
           </div>
-        </div>
-      </section>
+        )}
 
-      <section className="mt-4 grid items-start gap-4 xl:grid-cols-[1fr_0.65fr]">
-        <div className="rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
-          {cardTitle("Ajouter une note / communication manuelle")}
+        {showQuickEmail && (
+          <div className="mt-4 rounded-2xl border border-amber-700/25 bg-[#201812] p-4">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-100">
+              Envoi rapide d’un mail
+            </h3>
 
-          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3">
-            <textarea
-              className="min-h-[120px] w-full resize-none rounded-lg border border-amber-700/20 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40"
-              value={newNote}
-              onChange={(e) => setNewNote(e.target.value)}
-              placeholder="Ex : réponse au mail auto, question du prospect, échange manuel..."
+            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+              <input
+                className={inputClass()}
+                value={quickEmailRecipient}
+                onChange={(e) => setQuickEmailRecipient(e.target.value)}
+                placeholder="Adresse email du prospect"
+              />
+              <Link
+                href="/mailbox"
+                className="rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2.5 text-sm text-amber-100 hover:bg-[#3a2c24] text-center"
+              >
+                Ouvrir la boîte mail
+              </Link>
+            </div>
+
+            <input
+              className={`${inputClass()} mt-3`}
+              value={quickEmailSubject}
+              onChange={(e) => setQuickEmailSubject(e.target.value)}
+              placeholder="Objet"
             />
+
+            <textarea
+              className="mt-3 min-h-[120px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+              value={quickEmailBody}
+              onChange={(e) => setQuickEmailBody(e.target.value)}
+              placeholder="Message rapide..."
+            />
+
             <div className="mt-3 flex justify-end">
               <button
-                onClick={addInternalNote}
+                type="button"
+                onClick={sendQuickEmail}
                 disabled={saving}
-                className="rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-amber-600 disabled:opacity-50"
+                className={actionButtonClass("primary")}
               >
-                Ajouter au suivi
+                Envoyer
               </button>
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
-          {cardTitle("Rappels internes")}
+        {showOrderPanel && (
+          <div className="mt-4 rounded-2xl border border-amber-700/25 bg-[#201812] p-4">
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-100">
+              Bon de commande
+            </h3>
 
-          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3 min-h-[178px]">
-            {reminders.length === 0 ? (
-              <p className="text-sm text-amber-200/70">
-                Aucun rappel enregistré.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {reminders.map((reminder) => (
-                  <div
-                    key={reminder.id}
-                    className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2 text-sm text-amber-200/80"
+            <div className="grid gap-3 md:grid-cols-2">
+              <input
+                className={inputClass()}
+                value={orderRecipientEmail}
+                onChange={(e) => setOrderRecipientEmail(e.target.value)}
+                placeholder="Email du prospect"
+              />
+
+              <select
+                className={inputClass()}
+                value={orderOffer}
+                onChange={(e) => setOrderOffer(e.target.value as OrderOfferKey)}
+              >
+                <option value="selen_review">Selen Review</option>
+                <option value="selen_prepa">Selen Prepa</option>
+                <option value="selen_daily">Selen Daily</option>
+                <option value="selen_news">Selen News</option>
+                <option value="selen_studio">Selen Studio</option>
+              </select>
+
+              <input
+                className={inputClass()}
+                value={orderAmount}
+                onChange={(e) => setOrderAmount(e.target.value)}
+                placeholder="Montant / tarif affiché"
+              />
+
+              <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+                <strong>Mode de paiement :</strong> Stripe
+              </div>
+
+              <div className="md:col-span-2">
+                <div className="flex flex-col gap-2 md:flex-row">
+                  <input
+                    className={inputClass()}
+                    value={orderPaymentLink}
+                    onChange={(e) => setOrderPaymentLink(e.target.value)}
+                    placeholder="Lien de paiement Stripe"
+                  />
+                  <button
+                    type="button"
+                    onClick={generateStripePaymentLink}
+                    disabled={saving}
+                    className={actionButtonClass()}
                   >
-                    <p className="font-medium text-amber-100">
-                      {reminder.title}
-                    </p>
-                    <p>{reminder.note || "—"}</p>
-                    <p className="text-xs text-amber-300/70">
-                      {formatDate(reminder.remind_at)} • {reminder.status}
-                    </p>
+                    Générer lien Stripe
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
+              <strong>Prestation :</strong> {ORDER_OFFERS[orderOffer].label} —{" "}
+              {ORDER_OFFERS[orderOffer].shortDescription}
+            </div>
+
+            <textarea
+              className="mt-3 min-h-[180px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+              value={orderMessage}
+              onChange={(e) => setOrderMessage(e.target.value)}
+              placeholder="Message d’accompagnement du bon de commande..."
+            />
+
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={saveOrderDraft}
+                disabled={saving}
+                className={actionButtonClass()}
+              >
+                Générer le brouillon
+              </button>
+
+              <button
+                type="button"
+                onClick={sendOrderEmail}
+                disabled={saving}
+                className={actionButtonClass("primary")}
+              >
+                Envoyer le bon de commande
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.72fr]">
+        <div className="relative min-w-0">
+          {showSpellbook && (
+            <ProspectSpellbook onClose={() => setShowSpellbook(false)} />
+          )}
+          <div className={panelClass()}>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("overview")}
+                className={
+                  activeTab === "overview"
+                    ? "rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow"
+                    : "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
+                }
+              >
+                Vue d’ensemble
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("questionnaire")}
+                className={
+                  activeTab === "questionnaire"
+                    ? "rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow"
+                    : "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
+                }
+              >
+                Questionnaire
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("history")}
+                className={
+                  activeTab === "history"
+                    ? "rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow"
+                    : "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
+                }
+              >
+                Historique
+              </button>
+            </div>
+
+            {activeTab === "overview" && (
+              <div className="space-y-4">
+                <section>
+                  {cardTitle("Informations prospect")}
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input
+                      className={inputClass()}
+                      value={form.organization_name}
+                      onChange={(e) =>
+                        updateField("organization_name", e.target.value)
+                      }
+                      placeholder="Nom organisme"
+                    />
+                    <input
+                      className={inputClass()}
+                      value={form.email_found}
+                      onChange={(e) =>
+                        updateField("email_found", e.target.value)
+                      }
+                      placeholder="Email"
+                    />
+                    <input
+                      className={inputClass()}
+                      value={form.website_found}
+                      onChange={(e) =>
+                        updateField("website_found", e.target.value)
+                      }
+                      placeholder="Site web"
+                    />
+                    <input
+                      className={inputClass()}
+                      value={form.naf_code}
+                      onChange={(e) => updateField("naf_code", e.target.value)}
+                      placeholder="Code NAF"
+                    />
+                    <input
+                      className={inputClass()}
+                      value={form.training_domain}
+                      onChange={(e) =>
+                        updateField("training_domain", e.target.value)
+                      }
+                      placeholder="Domaine de formation"
+                    />
+                    <select
+                      className={inputClass()}
+                      value={form.prospect_type}
+                      onChange={(e) =>
+                        updateField("prospect_type", e.target.value)
+                      }
+                    >
+                      <option value="nouvel_entrant">Nouvel entrant</option>
+                      <option value="qp_ok">QP OK</option>
+                      <option value="no_nda">No NDA</option>
+                    </select>
+                    <input
+                      className={inputClass()}
+                      value={form.linkedin_url}
+                      onChange={(e) =>
+                        updateField("linkedin_url", e.target.value)
+                      }
+                      placeholder="LinkedIn"
+                    />
+                    <input
+                      className={inputClass()}
+                      value={form.facebook_url}
+                      onChange={(e) =>
+                        updateField("facebook_url", e.target.value)
+                      }
+                      placeholder="Facebook"
+                    />
+                    <input
+                      className={inputClass()}
+                      value={form.whatsapp_url}
+                      onChange={(e) =>
+                        updateField("whatsapp_url", e.target.value)
+                      }
+                      placeholder="WhatsApp"
+                    />
+                    <select
+                      className={inputClass()}
+                      value={form.qualiopi_status}
+                      onChange={(e) =>
+                        updateField("qualiopi_status", e.target.value)
+                      }
+                    >
+                      <option value="unknown">Qualiopi inconnu</option>
+                      <option value="certified">Certifié</option>
+                      <option value="not_certified">Non certifié</option>
+                    </select>
+                    <select
+                      className={inputClass()}
+                      value={form.workflow_status}
+                      onChange={(e) =>
+                        updateField("workflow_status", e.target.value)
+                      }
+                    >
+                      <option value="new">Nouveau</option>
+                      <option value="questionnaire_sent">
+                        Questionnaire envoyé
+                      </option>
+                      <option value="waiting_reply">En attente réponse</option>
+                      <option value="followup_sent">Relance envoyée</option>
+                      <option value="questionnaire_completed">
+                        Questionnaire rempli
+                      </option>
+                      <option value="offer_sent">Offre envoyée</option>
+                      <option value="meeting_booked">RDV pris</option>
+                      <option value="closed_no_reply">Clos sans réponse</option>
+                      <option value="closed_won">Clos gagné</option>
+                      <option value="closed_lost">Clos perdu</option>
+                    </select>
+                    <select
+                      className={inputClass()}
+                      value={form.preferred_contact_channel}
+                      onChange={(e) =>
+                        updateField("preferred_contact_channel", e.target.value)
+                      }
+                    >
+                      <option value="email">Email</option>
+                      <option value="facebook">Facebook</option>
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="linkedin">LinkedIn</option>
+                      <option value="phone">Téléphone</option>
+                      <option value="none">Aucun</option>
+                    </select>
                   </div>
-                ))}
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className={miniCardClass()}>
+                      <strong>Premier email :</strong>{" "}
+                      {prospect.first_email_status === "sent"
+                        ? "envoyé"
+                        : "non envoyé"}
+                    </div>
+
+                    <div className={miniCardClass()}>
+                      <strong>Date envoi :</strong>{" "}
+                      {prospect.first_outreach_sent_at
+                        ? new Date(
+                            prospect.first_outreach_sent_at,
+                          ).toLocaleString()
+                        : "—"}
+                    </div>
+                  </div>
+
+                  <textarea
+                    className="mt-3 min-h-[90px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+                    value={form.internal_notes}
+                    onChange={(e) =>
+                      updateField("internal_notes", e.target.value)
+                    }
+                    placeholder="Notes internes"
+                  />
+                </section>
+
+                <section>
+                  {cardTitle("Recommandation commerciale")}
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className={miniCardClass()}>
+                      <strong>Offre principale :</strong>{" "}
+                      {prospect.recommended_offer_primary || "—"}
+                    </div>
+
+                    <div className={miniCardClass()}>
+                      <strong>Offre secondaire :</strong>{" "}
+                      {prospect.recommended_offer_secondary || "—"}
+                    </div>
+                  </div>
+
+                  <div className={`mt-3 ${miniCardClass()}`}>
+                    <strong>Angle commercial :</strong>{" "}
+                    {prospect.sales_angle || "—"}
+                  </div>
+                </section>
+
+                <section>
+                  {cardTitle("Résumé rapide")}
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className={miniCardClass()}>
+                      <strong>Questionnaire :</strong>{" "}
+                      {prospect.questionnaire_status || "non envoyé"}
+                    </div>
+                    <div className={miniCardClass()}>
+                      <strong>Date réponse :</strong>{" "}
+                      {prospect.questionnaire_completed_at
+                        ? new Date(
+                            prospect.questionnaire_completed_at,
+                          ).toLocaleString()
+                        : "—"}
+                    </div>
+                    <div className={miniCardClass()}>
+                      <strong>Dernière conclusion :</strong>{" "}
+                      {getCallOutcomeLabel(firstMeeting?.call_outcome ?? null)}
+                    </div>
+                    <div className={miniCardClass()}>
+                      <strong>Montant vente :</strong>{" "}
+                      {firstMeeting?.sale_amount != null
+                        ? `${firstMeeting.sale_amount} €`
+                        : "—"}
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {activeTab === "questionnaire" && (
+              <div>
+                {cardTitle("Questionnaire")}
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className={miniCardClass()}>
+                    <strong>Statut :</strong>{" "}
+                    {prospect.questionnaire_status || "non envoyé"}
+                  </div>
+
+                  <div className={miniCardClass()}>
+                    <strong>Date de réponse :</strong>{" "}
+                    {prospect.questionnaire_completed_at
+                      ? new Date(
+                          prospect.questionnaire_completed_at,
+                        ).toLocaleString()
+                      : "—"}
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] p-3 text-sm text-amber-200/80">
+                  {questionnaireItems.length === 0 ? (
+                    <p>Aucune réponse enregistrée pour le moment.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {questionnaireItems.map((item, index) => (
+                        <div
+                          key={index}
+                          className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2"
+                        >
+                          <p className="font-medium text-amber-100">
+                            {item.question}
+                          </p>
+                          <p className="text-amber-200/80">{item.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "history" && (
+              <div>
+                {cardTitle("Historique des communications")}
+
+                {messages.length === 0 ? (
+                  <p className="text-sm text-amber-200/70">
+                    Aucune communication enregistrée.
+                  </p>
+                ) : (
+                  <div className="grid gap-2">
+                    {messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-4 py-3 text-sm text-amber-200/80"
+                      >
+                        <div className="mb-2 flex flex-wrap gap-2 text-xs text-amber-300/70">
+                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
+                            {msg.channel || "—"}
+                          </span>
+                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
+                            {msg.direction || "—"}
+                          </span>
+                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
+                            {msg.message_type || "—"}
+                          </span>
+                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
+                            {msg.delivery_status || "—"}
+                          </span>
+                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
+                            {formatDate(msg.created_at)}
+                          </span>
+                        </div>
+
+                        {msg.subject && (
+                          <p className="font-medium text-amber-100">
+                            {msg.subject}
+                          </p>
+                        )}
+
+                        <p className="mt-1 whitespace-pre-wrap leading-relaxed">
+                          {msg.body || "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
-      </section>
 
-      <section className="mt-4 rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
-        {cardTitle("Questionnaire")}
+        <div className="xl:sticky xl:top-6">
+          <div className="space-y-4">
+            <div className={`${panelClass()} h-fit`}>
+              {cardTitle("Conclusion d’appel")}
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-            <strong>Statut :</strong>{" "}
-            {prospect.questionnaire_status || "non envoyé"}
-          </div>
+              <div className="grid gap-3">
+                <select
+                  className={inputClass()}
+                  value={callOutcome}
+                  onChange={(e) => setCallOutcome(e.target.value)}
+                >
+                  <option value="">Choisir une conclusion</option>
+                  <option value="won_audit_blanc">Vente Selen Review</option>
+                  <option value="won_preparation_qualiopi">
+                    Vente Selen Prepa
+                  </option>
+                  <option value="won_preparation_nda">Vente Selen Prepa</option>
+                  <option value="won_gestion_quotidienne">
+                    Vente Selen Daily
+                  </option>
+                  <option value="needs_followup_call">
+                    Nécessite un nouvel appel
+                  </option>
+                  <option value="not_interested">Pas intéressé</option>
+                  <option value="no_answer">Injoignable / sans retour</option>
+                  <option value="other">Autre</option>
+                </select>
 
-          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-            <strong>Date de réponse :</strong>{" "}
-            {prospect.questionnaire_completed_at
-              ? new Date(prospect.questionnaire_completed_at).toLocaleString()
-              : "—"}
-          </div>
-        </div>
-
-        <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] p-3 text-sm text-amber-200/80">
-          {!prospect.questionnaire_response_json ? (
-            <p>Aucune réponse enregistrée pour le moment.</p>
-          ) : (
-            <div className="space-y-2">
-              {parseTallyResponses(prospect.questionnaire_response_json).map(
-                (item: { question: string; answer: string }, index: number) => (
-                  <div
-                    key={index}
-                    className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2"
-                  >
-                    <p className="font-medium text-amber-100">
-                      {item.question}
-                    </p>
-                    <p className="text-amber-200/80">{item.answer}</p>
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
-        {cardTitle("Recommandation commerciale")}
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-            <strong>Offre principale :</strong>{" "}
-            {prospect.recommended_offer_primary || "—"}
-          </div>
-
-          <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-            <strong>Offre secondaire :</strong>{" "}
-            {prospect.recommended_offer_secondary || "—"}
-          </div>
-        </div>
-
-        <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-          <strong>Angle commercial :</strong> {prospect.sales_angle || "—"}
-        </div>
-      </section>
-
-      <section className="mt-4 rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
-        {cardTitle("Historique des communications")}
-
-        {messages.length === 0 ? (
-          <p className="text-sm text-amber-200/70">
-            Aucune communication enregistrée.
-          </p>
-        ) : (
-          <div className="grid gap-2">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-4 py-3 text-sm text-amber-200/80"
-              >
-                <div className="mb-2 flex flex-wrap gap-2 text-xs text-amber-300/70">
-                  <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                    {msg.channel || "—"}
-                  </span>
-                  <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                    {msg.direction || "—"}
-                  </span>
-                  <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                    {msg.message_type || "—"}
-                  </span>
-                  <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                    {msg.delivery_status || "—"}
-                  </span>
-                  <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                    {formatDate(msg.created_at)}
-                  </span>
-                </div>
-
-                {msg.subject && (
-                  <p className="font-medium text-amber-100">{msg.subject}</p>
+                {isSaleOutcome && (
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className={inputClass()}
+                    value={saleAmount}
+                    onChange={(e) => setSaleAmount(e.target.value)}
+                    placeholder="Montant de la vente (€)"
+                  />
                 )}
 
-                <p className="mt-1 whitespace-pre-wrap leading-relaxed">
-                  {msg.body || "—"}
-                </p>
+                <textarea
+                  className="min-h-[110px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+                  value={callSummary}
+                  onChange={(e) => setCallSummary(e.target.value)}
+                  placeholder="Résumé de l’appel"
+                />
+
+                <label className="flex items-center gap-2 text-sm text-amber-200/80">
+                  <input
+                    type="checkbox"
+                    checked={followupNeeded}
+                    onChange={(e) => setFollowupNeeded(e.target.checked)}
+                  />
+                  Suivi nécessaire
+                </label>
+
+                {followupNeeded && (
+                  <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3">
+                    <div className="grid gap-3">
+                      <input
+                        className={inputClass()}
+                        value={followupTitle}
+                        onChange={(e) => setFollowupTitle(e.target.value)}
+                        placeholder="Titre du rappel"
+                      />
+                      <textarea
+                        className="min-h-[70px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+                        value={followupNote}
+                        onChange={(e) => setFollowupNote(e.target.value)}
+                        placeholder="Détail du rappel"
+                      />
+                      <input
+                        type="datetime-local"
+                        className={inputClass()}
+                        value={followupDate}
+                        onChange={(e) => setFollowupDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={saveCallConclusion}
+                  disabled={saving}
+                  className={actionButtonClass("primary")}
+                >
+                  Enregistrer la conclusion d’appel
+                </button>
               </div>
-            ))}
+            </div>
+
+            <div className={panelClass()}>
+              {cardTitle("Note rapide / suivi manuel")}
+
+              <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3">
+                <textarea
+                  className="min-h-[120px] w-full resize-none rounded-lg border border-amber-700/20 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Ex : réponse au mail auto, question du prospect, échange manuel..."
+                />
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={addInternalNote}
+                    disabled={saving}
+                    className={actionButtonClass("primary")}
+                  >
+                    Ajouter au suivi
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className={panelClass()}>
+              {cardTitle("Rappels internes")}
+
+              <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3 min-h-[178px]">
+                {reminders.length === 0 ? (
+                  <p className="text-sm text-amber-200/70">
+                    Aucun rappel enregistré.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {reminders.map((reminder) => (
+                      <div
+                        key={reminder.id}
+                        className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2 text-sm text-amber-200/80"
+                      >
+                        <p className="font-medium text-amber-100">
+                          {reminder.title}
+                        </p>
+                        <p>{reminder.note || "—"}</p>
+                        <p className="text-xs text-amber-300/70">
+                          {formatDate(reminder.remind_at)} • {reminder.status}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        )}
+        </div>
       </section>
     </main>
   );
