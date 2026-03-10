@@ -13,6 +13,8 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       NDA_CSV_URL: ${{ secrets.NDA_CSV_URL }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      EMAIL_SENDING_ENABLED: ${{ secrets.EMAIL_SENDING_ENABLED }}
 
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +30,8 @@ jobs:
           echo "SUPABASE URL present: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' }}"
           echo "SERVICE ROLE present: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
           echo "CSV URL present: ${{ secrets.NDA_CSV_URL != '' }}"
+          echo "RESEND API KEY present: ${{ secrets.RESEND_API_KEY != '' }}"
+          echo "EMAIL_SENDING_ENABLED present: ${{ secrets.EMAIL_SENDING_ENABLED != '' }}"
 
       - name: Run Selion base agent
         run: npx tsx scripts/selen-agent.ts

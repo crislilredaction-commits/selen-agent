@@ -352,7 +352,9 @@ async function main() {
   const { data: prospects } = await supabase
     .from("prospects")
     .select("*")
-    .in("enrichment_status", ["pending", "error", "no_result", "identified"])
+    .eq("source", "selion_1_nda")
+    .eq("is_visible", true)
+    .in("enrichment_status", ["pending", "error"])
     .order("created_at", { ascending: false })
     .limit(ENRICHMENT_BATCH_SIZE);
 
@@ -393,7 +395,7 @@ async function main() {
       await supabase
         .from("prospects")
         .update({
-          enrichment_status: "no_result",
+          enrichment_status: "identified",
           enrichment_source: "annuaire_entreprises_v1",
           already_qualiopi: qualiopi,
           naf_code: naf,

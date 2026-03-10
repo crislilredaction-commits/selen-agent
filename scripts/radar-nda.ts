@@ -118,11 +118,16 @@ function extractRowData(row: CsvRow) {
 }
 
 function buildComparisonKey(item: {
+  nda_number?: string | null;
   siret: string;
   organization_name: string;
   city: string;
 }) {
+  const nda = onlyDigits(item.nda_number ?? "");
+  if (nda) return `NDA:${nda}`;
+
   if (item.siret) return `SIRET:${item.siret}`;
+
   return `ORG:${normalizeText(item.organization_name)}::CITY:${normalizeText(item.city)}`;
 }
 
@@ -203,6 +208,7 @@ async function main() {
       {
         snapshot_date: string;
         siret: string | null;
+        nda_number: string | null;
         organization_name: string;
         city: string | null;
         comparison_key: string;
@@ -221,6 +227,7 @@ async function main() {
           city: row.city || null,
           comparison_key: comparisonKey,
           raw_json: row,
+          nda_number: row.nda_number || null,
         });
       }
     }
@@ -253,7 +260,7 @@ async function main() {
 
     const { data: yesterdayRows, error: yesterdayError } = await supabase
       .from("nda_snapshots")
-      .select("siret, organization_name, city")
+      .select("nda_number, siret, organization_name, city")
       .eq("snapshot_date", yesterday);
 
     if (yesterdayError) {
@@ -294,6 +301,7 @@ async function main() {
     const yesterdayKeys = new Set(
       (yesterdayRows ?? []).map((row) =>
         buildComparisonKey({
+          nda_number: row.nda_number ?? "",
           siret: row.siret ?? "",
           organization_name: row.organization_name ?? "",
           city: row.city ?? "",
@@ -355,7 +363,7 @@ async function main() {
       }
 
       prospectsToInsert.push({
-        source: "of_public_list",
+        source: "selion_1_nda",
         organization_name: org.organization_name,
         siret: org.siret || null,
         nda_number: org.nda_number || null,
@@ -387,7 +395,7 @@ async function main() {
     }
 
     const purgeDate = new Date(today);
-    purgeDate.setDate(purgeDate.getDate() - 2);
+    purgeDate.setDate(purgeDate.getDate() - 7);
     const purgeBefore = purgeDate.toISOString().slice(0, 10);
 
     await supabase

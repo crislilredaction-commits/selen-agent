@@ -27,7 +27,8 @@ async function main() {
 
   const { data, error } = await supabase
     .from("prospects")
-    .select("id, organization_name, email, email_found");
+    .select("id, organization_name, email, email_found")
+    .eq("is_visible", true);
 
   if (error) {
     throw new Error(error.message);
@@ -35,16 +36,16 @@ async function main() {
 
   const prospects = (data ?? []) as ProspectToPurge[];
 
-  const toDelete = prospects.filter((prospect) => !hasEmail(prospect));
+  const toHide = prospects.filter((prospect) => !hasEmail(prospect));
 
-  console.log(`Prospects candidats à la suppression : ${toDelete.length}`);
+  console.log(`Prospects candidats au masquage : ${toHide.length}`);
 
-  if (toDelete.length === 0) {
+  if (toHide.length === 0) {
     console.log("Aucun prospect à supprimer.");
     return;
   }
 
-  for (const prospect of toDelete) {
+  for (const prospect of toHide) {
     console.log(
       `Masquage → ${prospect.organization_name ?? "Sans nom"} (${prospect.id})`,
     );

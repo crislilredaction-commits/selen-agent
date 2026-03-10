@@ -24,6 +24,11 @@ async function main() {
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select("*")
+    .eq("source", "selion_1_nda")
+    .eq("is_visible", true)
+    .eq("auto_send_allowed", true)
+    .eq("needs_human_validation", false)
+    .eq("manual_review_needed", false)
     .eq("questionnaire_status", "sent")
     .is("questionnaire_completed_at", null)
     .lt("questionnaire_last_sent_at", sevenDaysAgo.toISOString());
@@ -42,7 +47,9 @@ async function main() {
     return;
   }
 
+  console.log(`Prospects récupérés pour relance : ${(prospects ?? []).length}`);
   console.log(`Prospects à relancer : ${filteredProspects.length}`);
+
   for (const prospect of filteredProspects) {
     const email = prospect.email_found || prospect.email;
 

@@ -59,18 +59,6 @@ function runScript(script: string, timeoutMs = 15 * 60 * 1000): Promise<void> {
   });
 }
 
-async function cleanupOldSnapshots() {
-  console.log("\nNettoyage snapshots > 3 jours");
-
-  const { error } = await supabase.rpc("cleanup_old_snapshots");
-
-  if (error) {
-    console.error("Erreur nettoyage :", error.message);
-  } else {
-    console.log("Snapshots anciens supprimés");
-  }
-}
-
 async function main() {
   console.log("\n==============================");
   console.log("SÉLION AGENT — DÉMARRAGE");
@@ -80,8 +68,6 @@ async function main() {
     await runScript("radar-nda.ts");
     await runScript("enrich-prospects-V3.ts");
     await runScript("purge-prospects.ts");
-
-    await cleanupOldSnapshots();
 
     await supabase.from("robot_logs").insert({
       run_type: "agent",

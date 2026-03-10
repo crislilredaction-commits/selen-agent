@@ -4,7 +4,7 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
-const EMAIL_SENDING_ENABLED = true;
+const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
 const DAILY_SEND_LIMIT = 20;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -33,7 +33,7 @@ async function main() {
       "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type, created_at, auto_send_allowed, needs_human_validation, manual_review_needed, last_contact_at, source",
     )
     .eq("is_visible", true)
-    .eq("source", "of_public_list")
+    .eq("source", "selion_1_nda")
     .eq("prospect_type", "nouvel_entrant")
     .eq("auto_send_allowed", true)
     .eq("needs_human_validation", false)
