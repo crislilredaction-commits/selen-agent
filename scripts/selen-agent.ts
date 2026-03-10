@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+
 dotenv.config({ path: ".env.local" });
 
 import { spawn } from "child_process";
@@ -68,6 +69,8 @@ async function main() {
     await runScript("radar-nda.ts");
     await runScript("enrich-prospects-V3.ts");
     await runScript("purge-prospects.ts");
+    await runScript("send-first-emails.ts");
+    await runScript("send-followups.ts");
 
     await supabase.from("robot_logs").insert({
       run_type: "agent",
@@ -90,6 +93,8 @@ async function main() {
         error: String(err),
       },
     });
+
+    process.exit(1);
   }
 }
 
