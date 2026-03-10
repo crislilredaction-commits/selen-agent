@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
-
 import { Resend } from "resend";
+
+dotenv.config({ path: ".env.local" });
 
 const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
 
@@ -24,23 +24,24 @@ export async function sendProspectQuestionnaireEmail({
   organizationName?: string | null;
   prospectId: string;
 }) {
-  const resend = getResendClient();
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
+
   if (!EMAIL_SENDING_ENABLED) {
-  console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
-    to,
-    subject: "...",
-  });
-  return { blocked: true };
-}
+    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+      to,
+      subject: "Félicitations pour votre NDA ✨",
+      organizationName,
+    });
+    return { blocked: true };
   }
+
+  const resend = getResendClient();
 
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
     subject: "Félicitations pour votre NDA ✨",
     html: `
-      
       <p>Bonjour ✨</p>
 
       <p>Vous venez d’obtenir votre numéro de déclaration d’activité. <strong>Félicitations pour cette belle étape 🎉</strong></p>
@@ -66,6 +67,7 @@ export async function sendProspectQuestionnaireEmail({
       <p>À bientôt,<br>
       <strong>Sélion ✨</strong><br>
       Selen Editions</p>
+
       <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
     `,
   });
@@ -106,13 +108,6 @@ function getOfferIntro(offer: string | null | undefined) {
 }
 
 export async function sendQuestionnaireFollowupEmail({
-  if (!EMAIL_SENDING_ENABLED) {
-  console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
-    to,
-    subject: "Votre guide Selen + la suite la plus adaptée ✨",
-  });
-  return { blocked: true };
-}
   to,
   organizationName,
   recommendedOfferPrimary,
@@ -121,8 +116,6 @@ export async function sendQuestionnaireFollowupEmail({
   organizationName?: string | null;
   recommendedOfferPrimary?: string | null;
 }) {
-  const resend = getResendClient();
-
   const pdfLink =
     "https://selion.selen-editions.fr/guide-dossier-stagiaire-qualiopi.pdf";
   const calendlyLink = "https://calendly.com/romaric-paymal/rdv-romaric-paymal";
@@ -130,12 +123,23 @@ export async function sendQuestionnaireFollowupEmail({
   const offerLabel = getOfferLabel(recommendedOfferPrimary);
   const offerIntro = getOfferIntro(recommendedOfferPrimary);
 
+  if (!EMAIL_SENDING_ENABLED) {
+    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+      to,
+      subject: "Votre guide Selen + la suite la plus adaptée ✨",
+      organizationName,
+      recommendedOfferPrimary,
+    });
+    return { blocked: true };
+  }
+
+  const resend = getResendClient();
+
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
     subject: "Votre guide Selen + la suite la plus adaptée ✨",
     html: `
-      
       <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
 
       <p>Merci d’avoir pris le temps de répondre à notre questionnaire.</p>
@@ -165,6 +169,7 @@ export async function sendQuestionnaireFollowupEmail({
       <p>À très bientôt,<br>
       <strong>Sélion ✨</strong><br>
       Selen Editions</p>
+
       <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
     `,
   });
@@ -179,17 +184,18 @@ export async function sendProspectFollowupEmail({
   organizationName?: string | null;
   prospectId: string;
 }) {
-  const resend = getResendClient();
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
 
   if (!EMAIL_SENDING_ENABLED) {
-  console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
-    to,
-    subject: "...",
-  });
-  return { blocked: true };
-}
+    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+      to,
+      subject: "Je me permets de vous relancer 🙂",
+      organizationName,
+    });
+    return { blocked: true };
   }
+
+  const resend = getResendClient();
 
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
@@ -222,6 +228,14 @@ export async function sendProspectFollowupEmail({
 }
 
 export async function sendTestEmail() {
+  if (!EMAIL_SENDING_ENABLED) {
+    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+      to: "crislil.redaction@gmail.com",
+      subject: "Test Selion ✨",
+    });
+    return { blocked: true };
+  }
+
   const resend = getResendClient();
 
   return await resend.emails.send({
