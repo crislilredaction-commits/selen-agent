@@ -27,11 +27,12 @@ export async function sendProspectQuestionnaireEmail({
   const resend = getResendClient();
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
   if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL BLOQUÉ (mode test)", {
-      to,
-      subject: "...",
-    });
-    return { blocked: true };
+  console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+    to,
+    subject: "...",
+  });
+  return { blocked: true };
+}
   }
 
   return await resend.emails.send({
@@ -105,6 +106,13 @@ function getOfferIntro(offer: string | null | undefined) {
 }
 
 export async function sendQuestionnaireFollowupEmail({
+  if (!EMAIL_SENDING_ENABLED) {
+  console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+    to,
+    subject: "Votre guide Selen + la suite la plus adaptée ✨",
+  });
+  return { blocked: true };
+}
   to,
   organizationName,
   recommendedOfferPrimary,
@@ -175,11 +183,12 @@ export async function sendProspectFollowupEmail({
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
 
   if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL BLOQUÉ (mode test)", {
-      to,
-      subject: "Je me permets de vous relancer 🙂",
-    });
-    return { blocked: true };
+  console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+    to,
+    subject: "...",
+  });
+  return { blocked: true };
+}
   }
 
   return await resend.emails.send({

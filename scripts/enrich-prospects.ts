@@ -50,7 +50,13 @@ function ensureAbsoluteUrl(url: string): string {
   return `https://${url}`;
 }
 
-async function fetchHtml(url: string): Promise<string | null> {
+async function fetchHtml(
+  url: string,
+  timeoutMs = 8000,
+): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const response = await fetch(url, {
       headers: {
@@ -58,6 +64,7 @@ async function fetchHtml(url: string): Promise<string | null> {
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
       },
       redirect: "follow",
+      signal: controller.signal,
     });
 
     if (!response.ok) return null;
@@ -68,6 +75,8 @@ async function fetchHtml(url: string): Promise<string | null> {
     return await response.text();
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

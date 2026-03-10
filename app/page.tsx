@@ -159,7 +159,7 @@ export default async function Home() {
       <div className="fixed right-6 top-6 z-50">
         <LogoutButton />
       </div>
-      <div className="fixed right-6 top-6 w-[220px]">
+      <div className="fixed right-10 top-24 z-40 w-[260px] pointer-events-none">
         <SelionCompanion />
       </div>
 
@@ -175,9 +175,6 @@ export default async function Home() {
           <h1 className="font-cinzel text-5xl font-bold tracking-tight text-amber-100">
             Tableau de bord
           </h1>
-          <p className="mt-2 text-sm text-amber-400/50">
-            File active NDA · nouveaux entrants détectés chaque jour
-          </p>
         </header>
 
         {/* Stats grid */}
@@ -305,114 +302,29 @@ export default async function Home() {
             )}
           </div>
 
-          {/* Journal */}
-          <div className="rounded-3xl border border-amber-800/20 bg-gradient-to-b from-[#1e1610]/90 to-[#170f0a]/90 p-6 shadow-2xl backdrop-blur-sm">
-            <h2 className="font-cinzel text-xl font-semibold text-amber-100">
-              Journal
-            </h2>
-            <p className="mt-0.5 mb-5 text-xs text-amber-400/50">
-              Activité en temps réel
-            </p>
+          {/* Notes internes */}
+          <section className="mb-8">
+            <div className="rounded-3xl border border-amber-800/20 bg-gradient-to-b from-[#1e1610]/90 to-[#170f0a]/90 p-6 shadow-2xl">
+              <h2 className="font-cinzel text-xl font-semibold text-amber-100">
+                Notes internes
+              </h2>
 
-            <div className="space-y-3">
-              {[
-                {
-                  icon: "👁",
-                  text:
-                    stats.prospects === 0
-                      ? "Aucun prospect visible."
-                      : `${stats.prospects} prospect(s) visible(s) dans la file.`,
-                },
-                {
-                  icon: "✉️",
-                  text:
-                    stats.contactable === 0
-                      ? "Aucun prospect contactable."
-                      : `${stats.contactable} prospect(s) contactable(s).`,
-                },
-                {
-                  icon: "📤",
-                  text:
-                    stats.contacted === 0
-                      ? "Aucun email envoyé."
-                      : `${stats.contacted} email(s) envoyé(s) au total.`,
-                },
-                {
-                  icon: "🏆",
-                  text:
-                    stats.salesWon === 0
-                      ? "Aucune vente conclue."
-                      : `${stats.salesWon} vente(s) · ${stats.revenue.toLocaleString("fr-FR")} €`,
-                },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 rounded-xl border border-amber-900/20 bg-amber-950/20 px-3 py-2.5"
-                >
-                  <span className="mt-0.5 text-base">{item.icon}</span>
-                  <p className="text-xs leading-relaxed text-amber-200/70">
-                    {item.text}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {/* Pipeline visual */}
-            <div className="mt-6">
-              <p className="mb-3 text-xs font-medium uppercase tracking-widest text-amber-400/40">
-                Pipeline
+              <p className="mt-0.5 mb-5 text-xs text-amber-400/50">
+                Informations commerciales · rappels équipe
               </p>
-              <div className="space-y-2">
-                {[
-                  {
-                    label: "Contactés",
-                    value: stats.contacted,
-                    max: stats.contactable,
-                  },
-                  {
-                    label: "Réponses",
-                    value: stats.replies,
-                    max: stats.contacted,
-                  },
-                  {
-                    label: "Qualifiés",
-                    value: stats.qualified,
-                    max: stats.replies,
-                  },
-                  { label: "RDV", value: stats.meetings, max: stats.qualified },
-                ].map((item) => (
-                  <div key={item.label}>
-                    <div className="mb-1 flex justify-between">
-                      <span className="text-xs text-amber-400/50">
-                        {item.label}
-                      </span>
-                      <span className="text-xs font-medium text-amber-300/70">
-                        {item.value}
-                      </span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-amber-950/60">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all"
-                        style={{
-                          width: `${item.max > 0 ? Math.min(100, (item.value / item.max) * 100) : 0}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
+
+              <DashboardReminders />
+
+              <div className="mt-5 flex justify-end">
+                <Link
+                  href="/conclusions-appels"
+                  className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow hover:bg-amber-600"
+                >
+                  Voir les conclusions d’appels
+                </Link>
               </div>
             </div>
-          </div>
-        </section>
-
-        {/* Meetings & Reminders */}
-        <section className="mb-8 grid gap-6 xl:grid-cols-2">
-          <div className="rounded-3xl border border-amber-800/20 bg-gradient-to-b from-[#1e1610]/90 to-[#170f0a]/90 p-6 shadow-2xl">
-            <MeetingsSalesManager />
-          </div>
-          <div className="rounded-3xl border border-amber-800/20 bg-gradient-to-b from-[#1e1610]/90 to-[#170f0a]/90 p-6 shadow-2xl">
-            <DashboardReminders />
-          </div>
+          </section>
         </section>
       </div>
     </main>
