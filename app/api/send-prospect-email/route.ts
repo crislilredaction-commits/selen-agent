@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+console.log("RESEND KEY EXISTS:", !!process.env.RESEND_API_KEY);
+console.log("RESEND KEY PREFIX:", process.env.RESEND_API_KEY?.slice(0, 3));
+
+const resendApiKey = process.env.RESEND_API_KEY;
+
+if (!resendApiKey) {
+  throw new Error("RESEND_API_KEY manquante dans .env.local");
+}
+
+const resend = new Resend(resendApiKey);
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
