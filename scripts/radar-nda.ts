@@ -258,10 +258,39 @@ async function main() {
       }
     }
 
-    const { data: yesterdayRows, error: yesterdayError } = await supabase
-      .from("nda_snapshots")
-      .select("nda_number, siret, organization_name, city")
-      .eq("snapshot_date", yesterday);
+    let yesterdayRows: Array<{
+      nda_number: string | null;
+      siret: string | null;
+      organization_name: string | null;
+      city: string | null;
+    }> = [];
+
+    const pageSize = 1000;
+    let from = 0;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("nda_snapshots")
+        .select("nda_number, siret, organization_name, city")
+        .eq("snapshot_date", yesterday)
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!data || data.length === 0) {
+        break;
+      }
+
+      yesterdayRows = yesterdayRows.concat(data);
+
+      if (data.length < pageSize) {
+        break;
+      }
+
+      from += pageSize;
+    }
 
     if (yesterdayError) {
       throw new Error(yesterdayError.message);

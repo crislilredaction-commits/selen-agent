@@ -26,6 +26,12 @@ function sleep(ms: number) {
 
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
+  const todayParis = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
   const { data: prospects, error } = await supabase
     .from("prospects")
