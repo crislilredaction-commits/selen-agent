@@ -4,7 +4,7 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
-const EMAIL_SENDING_ENABLED = false;
+const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
 const DAILY_SEND_LIMIT = 20;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

@@ -4,7 +4,7 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectFollowupEmail } from "../src/lib/email";
 
-const EMAIL_SENDING_ENABLED = false;
+const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === false;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,17 +30,16 @@ async function main() {
     .eq("needs_human_validation", false)
     .eq("manual_review_needed", false)
     .eq("questionnaire_status", "sent")
+    .neq("followup_email_status", "sent")
     .is("questionnaire_completed_at", null)
     .lt("questionnaire_last_sent_at", sevenDaysAgo.toISOString());
-
-  const filteredProspects = (prospects ?? []).filter(
-    (prospect) => prospect.followup_email_status !== "sent",
-  );
 
   if (error) {
     console.error(error);
     return;
   }
+
+  const filteredProspects = prospects ?? [];
 
   if (!filteredProspects || filteredProspects.length === 0) {
     console.log("Aucun prospect à relancer");

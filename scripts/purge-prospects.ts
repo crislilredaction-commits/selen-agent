@@ -13,6 +13,7 @@ type ProspectToPurge = {
   organization_name: string | null;
   email: string | null;
   email_found: string | null;
+  enrichment_status: string | null;
 };
 
 function hasEmail(prospect: ProspectToPurge) {
@@ -27,8 +28,9 @@ async function main() {
 
   const { data, error } = await supabase
     .from("prospects")
-    .select("id, organization_name, email, email_found")
-    .eq("is_visible", true);
+    .select("id, organization_name, email, email_found, enrichment_status")
+    .eq("is_visible", true)
+    .not("enrichment_status", "in", '("pending","searching")');
 
   if (error) {
     throw new Error(error.message);

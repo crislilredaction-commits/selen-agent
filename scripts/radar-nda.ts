@@ -292,10 +292,6 @@ async function main() {
       from += pageSize;
     }
 
-    if (yesterdayError) {
-      throw new Error(yesterdayError.message);
-    }
-
     console.log("9. Lignes snapshot veille =", (yesterdayRows ?? []).length);
 
     if ((yesterdayRows ?? []).length === 0) {
