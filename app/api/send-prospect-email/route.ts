@@ -9,8 +9,18 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const resendApiKey = process.env.RESEND_API_KEY;
 
+    if (!resendApiKey) {
+      return NextResponse.json(
+        { error: "RESEND_API_KEY manquante sur le serveur." },
+        { status: 500 },
+      );
+    }
+
+    const resend = new Resend(resendApiKey);
+
+    const body = await req.json();
     const { prospectId, recipientEmail, subject, message } = body ?? {};
 
     if (!prospectId) {
@@ -46,7 +56,6 @@ export async function POST(req: Request) {
 </div>
 
 <div style="margin-top:30px;padding-top:20px;border-top:1px solid #eee;text-align:center;">
-
   <img 
     src="https://selion.selen-editions.fr/logo-selen-editions.png"
     alt="Selen Editions"
@@ -60,7 +69,6 @@ export async function POST(req: Request) {
   <p style="font-size:12px;color:#888;margin:5px 0;">
     https://selen-editions.fr
   </p>
-
 </div>
 `;
 
@@ -130,17 +138,6 @@ export async function POST(req: Request) {
     );
   }
 }
-
-const resendApiKey = process.env.RESEND_API_KEY;
-
-if (!resendApiKey) {
-  return NextResponse.json(
-    { error: "RESEND_API_KEY manquante sur le serveur." },
-    { status: 500 },
-  );
-}
-
-const resend = new Resend(resendApiKey);
 
 function escapeHtml(input: string) {
   return input
