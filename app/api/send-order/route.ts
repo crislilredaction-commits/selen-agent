@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -11,6 +9,17 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
+    const resendApiKey = process.env.RESEND_API_KEY;
+
+    if (!resendApiKey) {
+      return NextResponse.json(
+        { error: "RESEND_API_KEY manquante sur le serveur." },
+        { status: 500 },
+      );
+    }
+
+    const resend = new Resend(resendApiKey);
+
     const body = await req.json();
 
     const {
@@ -48,16 +57,32 @@ export async function POST(req: Request) {
       process.env.RESEND_FROM_EMAIL ||
       "Sélion <onboarding@resend.dev>";
 
+    const htmlMessage = `
+<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #2b211b; white-space: pre-wrap;">
+  ${escapeHtml(message).replace(/\n/g, "<br />")}
+</div>
+
+<div style="margin-top:30px;padding-top:20px;border-top:1px solid #eee;text-align:center;">
+  <img 
+    src="https://selion.selen-editions.fr/logo-selen-editions.png"
+    alt="Selen Editions"
+    style="height:40px;margin-bottom:10px;"
+  />
+  <p style="font-size:13px;color:#666;margin:5px 0;">
+    Sélion — Selen Editions
+  </p>
+  <p style="font-size:12px;color:#888;margin:5px 0;">
+    https://selen-editions.fr
+  </p>
+</div>
+`;
+
     const sendResult = await resend.emails.send({
       from: fromEmail,
-      to: recipientEmail,
+      to: [recipientEmail],
       subject,
       text: message,
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #2b211b; white-space: pre-wrap;">
-          ${escapeHtml(message).replace(/\n/g, "<br />")}
-        </div>
-      `,
+      html: htmlMessage,
     });
 
     if (sendResult.error) {
