@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+
 dotenv.config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
@@ -16,10 +17,16 @@ type ProspectToPurge = {
   enrichment_status: string | null;
 };
 
-function hasEmail(prospect: ProspectToPurge) {
+function hasEmail(prospect: ProspectToPurge): boolean {
   return Boolean(
     (prospect.email_found && prospect.email_found.trim() !== "") ||
     (prospect.email && prospect.email.trim() !== ""),
+  );
+}
+
+function enrichmentFinished(status: string | null): boolean {
+  return ["enriched", "identified", "no_result", "failed"].includes(
+    status ?? "",
   );
 }
 
@@ -29,8 +36,7 @@ async function main() {
   const { data, error } = await supabase
     .from("prospects")
     .select("id, organization_name, email, email_found, enrichment_status")
-    .eq("is_visible", true)
-    .not("enrichment_status", "in", '("pending","searching")');
+    .eq("is_visible", true);
 
   if (error) {
     throw new Error(error.message);
@@ -38,12 +44,15 @@ async function main() {
 
   const prospects = (data ?? []) as ProspectToPurge[];
 
-  const toHide = prospects.filter((prospect) => !hasEmail(prospect));
+  const toHide = prospects.filter(
+    (prospect) =>
+      enrichmentFinished(prospect.enrichment_status) && !hasEmail(prospect),
+  );
 
   console.log(`Prospects candidats au masquage : ${toHide.length}`);
 
   if (toHide.length === 0) {
-    console.log("Aucun prospect à supprimer.");
+    console.log("Aucun prospect à masquer.");
     return;
   }
 
@@ -55,10 +64,11 @@ async function main() {
     const { error: logError } = await supabase.from("robot_logs").insert({
       run_type: "purge",
       level: "info",
-      message: "Prospect masqué car sans email exploitable",
+      message: "Prospect masqué car sans email après enrichissement terminé",
       details: {
         prospect_id: prospect.id,
         organization_name: prospect.organization_name,
+        enrichment_status: prospect.enrichment_status,
       },
     });
 
@@ -66,14 +76,14 @@ async function main() {
       console.error("Erreur log purge :", logError.message);
     }
 
-    const { error: deleteError } = await supabase
+    const { error: updateError } = await supabase
       .from("prospects")
       .update({ is_visible: false })
       .eq("id", prospect.id);
 
-    if (deleteError) {
+    if (updateError) {
       console.error(
-        `Erreur suppression ${prospect.organization_name}: ${deleteError.message}`,
+        `Erreur masquage ${prospect.organization_name ?? "Sans nom"}: ${updateError.message}`,
       );
     }
   }

@@ -45,16 +45,6 @@ type ContactExtractionResult = {
   qualiopi: boolean;
 };
 
-function normalize(text: string) {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 async function fetchHtml(url: string) {
   try {
     const res = await fetch(url, {
@@ -347,7 +337,7 @@ async function extractContacts(
 }
 
 async function main() {
-  console.log("Robot enrichissement V4 démarrage");
+  console.log("Robot enrichissement V5 démarrage");
 
   const todayParis = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Paris",
@@ -356,7 +346,7 @@ async function main() {
     day: "2-digit",
   }).format(new Date());
 
-  const { data: prospects } = await supabase
+  const { data: prospects, error } = await supabase
     .from("prospects")
     .select("*")
     .eq("source", "selion_1_nda")
@@ -367,10 +357,16 @@ async function main() {
     .order("created_at", { ascending: false })
     .limit(ENRICHMENT_BATCH_SIZE);
 
+  if (error) {
+    throw new Error(error.message);
+  }
+
   if (!prospects?.length) {
     console.log("Aucun prospect à enrichir.");
     return;
   }
+
+  console.log(`Prospects à enrichir : ${prospects.length}`);
 
   for (const prospect of prospects as ProspectRow[]) {
     const name = prospect.organization_name;
@@ -378,9 +374,10 @@ async function main() {
 
     console.log("Recherche :", name);
 
-    let website: string | null = null;
-    let phone: string | null = null;
-    let email: string | null = null;
+    let website: string | null =
+      prospect.website_found ?? prospect.website ?? null;
+    let phone: string | null = prospect.phone_found ?? null;
+    let email: string | null = prospect.email_found ?? prospect.email ?? null;
     let linkedinUrl: string | null = prospect.linkedin_url ?? null;
     let facebookUrl: string | null = prospect.facebook_url ?? null;
     let whatsappUrl: string | null = prospect.whatsapp_url ?? null;
@@ -391,38 +388,24 @@ async function main() {
     const annuaire = await searchAnnuaireEntreprises(name);
 
     if (annuaire) {
-      website = annuaire.website;
-      phone = annuaire.phone;
+      website = website ?? annuaire.website;
+      phone = phone ?? annuaire.phone;
       qualiopi = annuaire.isQualiopi;
       isOrganismeFormation = annuaire.isOrganismeFormation;
       naf = annuaire.naf;
     }
 
-    if (annuaire && isOrganismeFormation === false) {
-      console.log(`Ignoré (pas OF) : ${name}`);
-
-      await supabase
-        .from("prospects")
-        .update({
-          enrichment_status: "identified",
-          enrichment_source: "annuaire_entreprises_v1",
-          already_qualiopi: qualiopi,
-          naf_code: naf,
-          enriched_at: new Date().toISOString(),
-        })
-        .eq("id", prospect.id);
-
-      continue;
-    }
-
     if (!website) {
-      website = await searchDuckDuckGo(name, prospect.city);
+      website = await searchDuckDuckGo(
+        name,
+        prospect.city ?? annuaire?.city ?? null,
+      );
     }
 
     if (website) {
       const contacts = await extractContacts(website);
 
-      email = contacts.email ?? null;
+      email = email ?? contacts.email ?? null;
       phone = phone ?? contacts.phone ?? null;
       linkedinUrl = linkedinUrl ?? contacts.linkedinUrl ?? null;
       facebookUrl = facebookUrl ?? contacts.facebookUrl ?? null;
@@ -438,19 +421,9 @@ async function main() {
       Boolean(facebookUrl) ||
       Boolean(whatsappUrl);
 
-    const status = isOrganismeFormation
-      ? hasUsefulData
-        ? "enriched"
-        : "identified"
-      : hasUsefulData
-        ? "enriched"
-        : "no_result";
+    const status = hasUsefulData ? "enriched" : "no_result";
 
-    const computedProspectType = qualiopi
-      ? "qp_ok"
-      : isOrganismeFormation
-        ? "nouvel_entrant"
-        : (prospect.prospect_type ?? null);
+    const computedProspectType = qualiopi ? "qp_ok" : "nouvel_entrant";
 
     await supabase
       .from("prospects")
@@ -465,13 +438,13 @@ async function main() {
         naf_code: naf,
         prospect_type: computedProspectType,
         enrichment_status: status,
-        enrichment_source: "annuaire_plus_ddg_v4",
+        enrichment_source: "annuaire_plus_ddg_v5",
         enriched_at: new Date().toISOString(),
       })
       .eq("id", prospect.id);
 
     console.log(
-      `OK → ${name} | site: ${website ?? "aucun"} | email: ${email ?? "aucun"} | phone: ${phone ?? "aucun"} | linkedin: ${linkedinUrl ?? "aucun"} | facebook: ${facebookUrl ?? "aucun"} | whatsapp: ${whatsappUrl ?? "aucun"} | status: ${status}`,
+      `OK → ${name} | OF-annuaire: ${isOrganismeFormation ? "oui" : "non"} | qualiopi: ${qualiopi ? "oui" : "non"} | site: ${website ?? "aucun"} | email: ${email ?? "aucun"} | phone: ${phone ?? "aucun"} | status: ${status}`,
     );
   }
 
