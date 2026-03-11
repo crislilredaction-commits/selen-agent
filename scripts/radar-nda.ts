@@ -37,17 +37,18 @@ function onlyDigits(value: string | null | undefined): string {
 function isValidOrganization(row: {
   organization_name: string;
   siret: string;
-  city: string;
+  nda_number: string;
 }) {
-  if (!row.organization_name) return false;
-  if (!row.city) return false;
+  if (!row.organization_name?.trim()) return false;
+
+  const nda = onlyDigits(row.nda_number);
+  if (!nda) return false;
 
   const siret = onlyDigits(row.siret);
   if (!siret || siret.length !== 14) return false;
 
   return true;
 }
-
 function getTodayParis(): string {
   const now = new Date();
   return new Intl.DateTimeFormat("en-CA", {
@@ -113,7 +114,7 @@ function extractRowData(row: CsvRow) {
     organization_name: organizationName.trim(),
     siret: onlyDigits(siret),
     city: city.trim(),
-    nda_number: ndaNumber.trim(),
+    nda_number: onlyDigits(ndaNumber),
   };
 }
 
