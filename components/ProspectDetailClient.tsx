@@ -95,7 +95,8 @@ const ORDER_OFFERS: Record<
   },
   selen_daily: {
     label: "Selen Daily",
-    price: "9 € / apprenant",
+    price:
+      "Abonnement mensuel : 160 € (≤25 apprenants) • 320 € (≤50) • 560 € (>50)",
     shortDescription: "Gestion administrative quotidienne avec agent dédié",
   },
   selen_news: {
