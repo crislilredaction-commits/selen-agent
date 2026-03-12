@@ -5,7 +5,9 @@ import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
 const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
-const DAILY_SEND_LIMIT = 20;
+const DAILY_SEND_LIMIT = 5;
+const MIN_DELAY_MS = 10_000;
+const MAX_EXTRA_DELAY_MS = 10_000;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -24,8 +26,13 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getRandomDelay(): number {
+  return MIN_DELAY_MS + Math.floor(Math.random() * MAX_EXTRA_DELAY_MS);
+}
+
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
+
   const todayParis = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Paris",
     year: "numeric",
@@ -101,7 +108,6 @@ async function main() {
       });
 
       const now = new Date().toISOString();
-
       const followupDate = new Date(
         Date.now() + 7 * 24 * 60 * 60 * 1000,
       ).toISOString();
@@ -145,7 +151,8 @@ async function main() {
         console.error("Erreur log message :", logError.message);
       }
 
-      const delay = 120000 + Math.floor(Math.random() * 120000);
+      const delay = getRandomDelay();
+      console.log(`Pause avant prochain envoi : ${delay} ms`);
       await sleep(delay);
     } catch (err) {
       console.error(`Erreur envoi ${email}:`, err);
