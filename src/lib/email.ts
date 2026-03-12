@@ -74,7 +74,8 @@ export async function sendProspectQuestionnaireEmail({
 
   <p>À bientôt 🌿<br>
   <strong>Sélion ✨</strong><br>
-  Selen Editions</p>
+  Selen Editions
+  www.selen-editions.fr</p>
 `,
   });
 }
@@ -236,7 +237,8 @@ export async function sendQuestionnaireFollowupEmail({
 
   <p>À très bientôt 🌱<br>
   <strong>Sélion ✨</strong><br>
-  Selen Editions</p>
+  Selen Editions
+  www.selen-editions.fr</p>
 `,
   });
 }
@@ -292,7 +294,8 @@ export async function sendProspectFollowupEmail({
 
   <p>À très bientôt 🌱<br>
   <strong>Sélion ✨</strong><br>
-  Selen Editions</p>
+  Selen Editions
+  www.selen-editions.fr
 `,
   });
 }
