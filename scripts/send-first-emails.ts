@@ -5,9 +5,9 @@ import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
 const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
-const DAILY_SEND_LIMIT = 5;
-const MIN_DELAY_MS = 10_000;
-const MAX_EXTRA_DELAY_MS = 10_000;
+const DAILY_SEND_LIMIT = 20;
+const MIN_DELAY_MS = 2000;
+const MAX_EXTRA_DELAY_MS = 3000;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -30,6 +30,82 @@ function getRandomDelay(): number {
   return MIN_DELAY_MS + Math.floor(Math.random() * MAX_EXTRA_DELAY_MS);
 }
 
+function extractDomainFromEmail(email: string): string {
+  return email.split("@")[1]?.trim().toLowerCase() ?? "";
+}
+
+function extractDomainFromWebsite(website: string | null | undefined): string {
+  if (!website) return "";
+  try {
+    const url = website.startsWith("http") ? website : `https://${website}`;
+    return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function isSuspiciousEmail(
+  email: string,
+  websiteFound?: string | null,
+  website?: string | null,
+): { suspicious: boolean; reason?: string } {
+  const normalized = email.trim().toLowerCase();
+  const domain = extractDomainFromEmail(normalized);
+
+  if (!normalized.includes("@") || !domain) {
+    return { suspicious: true, reason: "email invalide" };
+  }
+
+  const blockedExactDomains = new Set([
+    "dataprospects.fr",
+    "example.com",
+    "domain.com",
+    "email.com",
+  ]);
+
+  if (blockedExactDomains.has(domain)) {
+    return { suspicious: true, reason: `domaine bloqué (${domain})` };
+  }
+
+  if (
+    /\.(png|jpg|jpeg|gif|webp|svg|ico|css|js)$/i.test(normalized) ||
+    /@\d+x\./i.test(normalized)
+  ) {
+    return { suspicious: true, reason: "email manifestement parasité" };
+  }
+
+  if (/\.(edu)$/i.test(domain)) {
+    return {
+      suspicious: true,
+      reason: `domaine académique suspect (${domain})`,
+    };
+  }
+
+  const referenceWebsiteDomain =
+    extractDomainFromWebsite(websiteFound) || extractDomainFromWebsite(website);
+
+  if (referenceWebsiteDomain) {
+    const sameDomain =
+      domain === referenceWebsiteDomain ||
+      domain.endsWith(`.${referenceWebsiteDomain}`) ||
+      referenceWebsiteDomain.endsWith(`.${domain}`);
+
+    const obviouslyGenericOrOffTarget =
+      /(gmail\.com|yahoo\.com|hotmail\.com|outlook\.com|icloud\.com|live\.fr|live\.com)$/i.test(
+        domain,
+      ) === false;
+
+    if (!sameDomain && !obviouslyGenericOrOffTarget) {
+      return {
+        suspicious: true,
+        reason: `domaine incohérent avec le site (${domain} vs ${referenceWebsiteDomain})`,
+      };
+    }
+  }
+
+  return { suspicious: false };
+}
+
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
 
@@ -43,7 +119,7 @@ async function main() {
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select(
-      "id, organization_name, email, email_found, first_email_status, workflow_status, prospect_type, created_at, auto_send_allowed, needs_human_validation, manual_review_needed, last_contact_at, source",
+      "id, organization_name, email, email_found, website, website_found, first_email_status, workflow_status, prospect_type, created_at, auto_send_allowed, needs_human_validation, manual_review_needed, last_contact_at, source",
     )
     .eq("is_visible", true)
     .eq("source", "selion_1_nda")
@@ -65,7 +141,22 @@ async function main() {
 
   const candidates = (prospects ?? []).filter((p) => {
     const email = p.email_found || p.email;
-    return !!email;
+    if (!email) return false;
+
+    const suspiciousCheck = isSuspiciousEmail(
+      email,
+      p.website_found,
+      p.website,
+    );
+
+    if (suspiciousCheck.suspicious) {
+      console.log(
+        `Email exclu pour ${p.organization_name || "Prospect"} <${email}> | raison: ${suspiciousCheck.reason}`,
+      );
+      return false;
+    }
+
+    return true;
   });
 
   console.log(`Prospects récupérés : ${(prospects ?? []).length}`);

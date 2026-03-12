@@ -56,21 +56,6 @@ function getTodayParis(): string {
   }).format(now);
 }
 
-function getYesterdayParis(): string {
-  const now = new Date();
-  const parisNow = new Date(
-    now.toLocaleString("en-US", { timeZone: "Europe/Paris" }),
-  );
-  parisNow.setDate(parisNow.getDate() - 1);
-
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(parisNow);
-}
-
 function guessField(row: CsvRow, candidates: string[]): string {
   const entries = Object.entries(row);
 
@@ -129,6 +114,10 @@ function buildComparisonKey(item: {
   return `ORG:${normalizeText(item.organization_name)}::CITY:${normalizeText(item.city)}`;
 }
 
+function buildNameKey(name: string | null | undefined) {
+  return `NAME:${normalizeText(name)}`;
+}
+
 async function fetchCsvWithTimeout(
   url: string,
   timeoutMs = 60000,
@@ -159,7 +148,6 @@ async function main() {
   console.log("radar-nda.ts démarrage");
 
   const today = getTodayParis();
-  const yesterday = getYesterdayParis();
 
   const runInsert = await supabase
     .from("nda_import_runs")
@@ -256,7 +244,11 @@ async function main() {
       }
     }
 
-    let yesterdayRows: Array<{
+    const historyDate = new Date(today);
+    historyDate.setDate(historyDate.getDate() - 7);
+    const historyFrom = historyDate.toISOString().slice(0, 10);
+
+    let historyRows: Array<{
       nda_number: string | null;
       siret: string | null;
       organization_name: string | null;
@@ -264,14 +256,15 @@ async function main() {
     }> = [];
 
     const pageSize = 1000;
-    let from = 0;
+    let rangeFrom = 0;
 
     while (true) {
       const { data, error } = await supabase
         .from("nda_snapshots")
         .select("nda_number, siret, organization_name, city")
-        .eq("snapshot_date", yesterday)
-        .range(from, from + pageSize - 1);
+        .gte("snapshot_date", historyFrom)
+        .lt("snapshot_date", today)
+        .range(rangeFrom, rangeFrom + pageSize - 1);
 
       if (error) {
         throw new Error(error.message);
@@ -281,20 +274,20 @@ async function main() {
         break;
       }
 
-      yesterdayRows = yesterdayRows.concat(data);
+      historyRows = historyRows.concat(data);
 
       if (data.length < pageSize) {
         break;
       }
 
-      from += pageSize;
+      rangeFrom += pageSize;
     }
 
-    console.log("9. Lignes snapshot veille =", (yesterdayRows ?? []).length);
+    console.log("9. Lignes snapshot historique =", historyRows.length);
 
-    if ((yesterdayRows ?? []).length === 0) {
+    if (historyRows.length === 0) {
       console.log(
-        "10. Aucun snapshot de veille : initialisation uniquement, aucun prospect créé.",
+        "10. Aucun historique sur 7 jours : initialisation uniquement, aucun prospect créé.",
       );
 
       await supabase
@@ -321,8 +314,8 @@ async function main() {
       return;
     }
 
-    const yesterdayKeys = new Set(
-      (yesterdayRows ?? []).map((row) =>
+    const historyComparisonKeys = new Set(
+      historyRows.map((row) =>
         buildComparisonKey({
           nda_number: row.nda_number ?? "",
           siret: row.siret ?? "",
@@ -332,14 +325,44 @@ async function main() {
       ),
     );
 
-    console.log("11. Clés veille prêtes =", yesterdayKeys.size);
+    const historySiretKeys = new Set(
+      historyRows
+        .map((row) => onlyDigits(row.siret ?? ""))
+        .filter(Boolean)
+        .map((siret) => `SIRET:${siret}`),
+    );
+
+    const historyNameKeys = new Set(
+      historyRows
+        .map((row) => row.organization_name ?? "")
+        .filter(Boolean)
+        .map((name) => buildNameKey(name)),
+    );
+
+    console.log(
+      "10. Clés historique comparaison =",
+      historyComparisonKeys.size,
+    );
+    console.log("11. Clés historique SIRET =", historySiretKeys.size);
+    console.log("12. Clés historique NOM =", historyNameKeys.size);
 
     const newOrganizations = extracted.filter((row) => {
-      const key = buildComparisonKey(row);
-      return !yesterdayKeys.has(key);
+      const comparisonKey = buildComparisonKey(row);
+      const siretKey = row.siret ? `SIRET:${row.siret}` : "";
+      const nameKey = buildNameKey(row.organization_name);
+
+      const alreadySeenByComparison = historyComparisonKeys.has(comparisonKey);
+      const alreadySeenBySiret = siretKey
+        ? historySiretKeys.has(siretKey)
+        : false;
+      const alreadySeenByName = historyNameKeys.has(nameKey);
+
+      return (
+        !alreadySeenByComparison && !alreadySeenBySiret && !alreadySeenByName
+      );
     });
 
-    console.log("12. Nouveaux OF potentiels =", newOrganizations.length);
+    console.log("13. Nouveaux OF potentiels =", newOrganizations.length);
 
     const ndaNumbers = newOrganizations
       .map((org) => org.nda_number)
@@ -399,7 +422,7 @@ async function main() {
       rowsNew += 1;
     }
 
-    console.log("13. Prospects à insérer =", prospectsToInsert.length);
+    console.log("14. Prospects à insérer =", prospectsToInsert.length);
 
     if (prospectsToInsert.length > 0) {
       const batchSize = 500;
