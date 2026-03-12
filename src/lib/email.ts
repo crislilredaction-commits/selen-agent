@@ -1,7 +1,5 @@
 import dotenv from "dotenv";
 import { Resend } from "resend";
-import fs from "fs";
-import path from "path";
 
 dotenv.config({ path: ".env.local" });
 
@@ -15,21 +13,6 @@ function getResendClient() {
   }
 
   return new Resend(resendApiKey);
-}
-
-function getLogoAttachment() {
-  const logoPath = path.join(
-    process.cwd(),
-    "public",
-    "logo-selen-editions.png",
-  );
-  const logoBuffer = fs.readFileSync(logoPath);
-
-  return {
-    filename: "logo-selen-editions.png",
-    content: logoBuffer,
-    cid: "selenlogo",
-  };
 }
 
 export async function sendProspectQuestionnaireEmail({
@@ -94,8 +77,6 @@ export async function sendProspectQuestionnaireEmail({
   <p>À bientôt 🌿<br>
   <strong>Sélion ✨</strong><br>
   Selen Editions</p>
-
-  <img src="cid:selenlogo" alt="Selen Editions" width="200" style="display:block;margin-top:20px;" />
 `,
   });
 }
@@ -201,6 +182,8 @@ export async function sendQuestionnaireFollowupEmail({
   const diagnosticTitle = getDiagnosticTitle(recommendedOfferPrimary);
   const diagnosticSummary = getDiagnosticSummary(recommendedOfferPrimary);
   const diagnosticNextStep = getDiagnosticNextStep(recommendedOfferPrimary);
+  const offerIntro = getOfferIntro(recommendedOfferPrimary);
+  const offerLabel = getOfferLabel(recommendedOfferPrimary);
 
   if (!EMAIL_SENDING_ENABLED) {
     console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
@@ -218,7 +201,6 @@ export async function sendQuestionnaireFollowupEmail({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
     subject: "Votre guide Selen + la suite la plus adaptée ✨",
-    attachments: [getLogoAttachment()],
     html: `
   <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
 
@@ -257,8 +239,6 @@ export async function sendQuestionnaireFollowupEmail({
   <p>À très bientôt 🌱<br>
   <strong>Sélion ✨</strong><br>
   Selen Editions</p>
-
-  <img src="cid:selenlogo" alt="Selen Editions" width="200" style="display:block;margin-top:20px;" />
 `,
   });
 }
@@ -289,7 +269,7 @@ export async function sendProspectFollowupEmail({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
     subject: "Votre diagnostic administratif Selen est prêt ⭐",
-    attachments: [getLogoAttachment()],
+
     html: `
   <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
 
@@ -315,8 +295,6 @@ export async function sendProspectFollowupEmail({
   <p>À très bientôt 🌱<br>
   <strong>Sélion ✨</strong><br>
   Selen Editions</p>
-
-  <img src="cid:selenlogo" alt="Selen Editions" width="200" style="display:block;margin-top:20px;" />
 `,
   });
 }
@@ -336,7 +314,6 @@ export async function sendTestEmail() {
     from: "Selion ✨ <selion@selen-editions.fr>",
     to: ["crislil.redaction@gmail.com"],
     subject: "Test Selion ✨",
-    attachments: [getLogoAttachment()],
     html: `<p>Test email Selion ✨</p>`,
   });
 }
