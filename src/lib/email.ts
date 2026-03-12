@@ -1,5 +1,7 @@
 import dotenv from "dotenv";
 import { Resend } from "resend";
+import fs from "fs";
+import path from "path";
 
 dotenv.config({ path: ".env.local" });
 
@@ -13,6 +15,21 @@ function getResendClient() {
   }
 
   return new Resend(resendApiKey);
+}
+
+function getLogoAttachment() {
+  const logoPath = path.join(
+    process.cwd(),
+    "public",
+    "logo-selen-editions.png",
+  );
+  const logoBuffer = fs.readFileSync(logoPath);
+
+  return {
+    filename: "logo-selen-editions.png",
+    content: logoBuffer,
+    cid: "selenlogo",
+  };
 }
 
 export async function sendProspectQuestionnaireEmail({
@@ -39,37 +56,47 @@ export async function sendProspectQuestionnaireEmail({
 
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
+
     to,
-    subject: "Félicitations pour votre NDA ✨",
+
+    subject: "Félicitations pour cette nouvelle étape ✨",
+
+    attachments: [getLogoAttachment()],
+
     html: `
-      <p>Bonjour ✨</p>
+  <p>Bonjour ✨</p>
 
-      <p>Vous venez d’obtenir votre numéro de déclaration d’activité. <strong>Félicitations pour cette belle étape 🎉</strong></p>
+  <p><strong>Félicitations pour cette nouvelle étape dans votre activité de formation 🎉</strong></p>
 
-      <p>Se lancer dans la formation est une aventure passionnante… mais on découvre vite que l’administratif peut parfois ressembler à un petit labyrinthe 🧭</p>
+  <p>Vous le savez peut-être déjà : transmettre, former, accompagner… c’est une chose 🌟  
+  Mais gérer toute la partie administrative au quotidien, c’en est une autre.</p>
 
-      <p>Chez <strong>Selen Editions</strong>, nous accompagnons des formateurs et des organismes de formation à différents moments de leur parcours : certains démarrent tout juste 🌱, d’autres sont déjà bien installés et souhaitent simplement gagner en sérénité dans leur gestion.</p>
+  <p>Depuis plusieurs années, nous accompagnons et auditons des centaines de formateurs et d’organismes de formation.  
+  Et une réalité revient souvent : <strong>les papiers, ce n’est pas ce qu’ils préfèrent</strong> 😅</p>
 
-      <p>Nous avons conçu nos accompagnements pour rester accessibles aux formateurs indépendants comme aux structures plus installées.</p>
+  <p>Entre la gestion du quotidien, les obligations administratives et les grandes étapes comme <strong>Qualiopi</strong> ou certains audits, il est facile de se sentir un peu perdu… ou de remettre certaines choses à plus tard 🧭</p>
 
-      <p>Notre mission est simple : transmettre notre expertise pour que l’administratif devienne un allié… et non un obstacle à votre mission de transmission ✨</p>
+  <p>Chez <strong>Selen Editions</strong>, notre mission est justement de rendre tout cela plus simple, plus clair et plus rassurant ✨</p>
 
-      <p>Nous avons préparé un mini diagnostic gratuit pour évaluer la préparation administrative de votre organisme :</p>
+  <p>Cette semaine, nous proposons un <strong>mini diagnostic gratuit</strong> pour mieux comprendre où vous en êtes aujourd’hui.</p>
 
-      <p style="margin:20px 0;">
-        <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
-          Répondre au questionnaire 🔮
-        </a>
-      </p>
+  <p>⭐ En remerciement, vous recevrez ensuite un <strong>guide offert</strong> pour vous aider à structurer plus sereinement votre gestion administrative, éviter les erreurs fréquentes et avancer avec davantage de clarté…</p>
 
-      <p>Cela prend 2 minutes et vous permettra de savoir si votre structure est déjà prête pour les obligations de la formation professionnelle ou si certains points méritent d’être sécurisés.</p>
+  <p style="margin:20px 0;">
+    <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
+      Répondre au questionnaire 🔮
+    </a>
+  </p>
 
-      <p>À bientôt,<br>
-      <strong>Sélion ✨</strong><br>
-      Selen Editions</p>
+  <p>Cela prend environ <strong>2 minutes</strong> ⏳  
+  et peut déjà vous aider à voir plus clairement les prochains points à sécuriser.</p>
 
-      <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
-    `,
+  <p>À bientôt 🌿<br>
+  <strong>Sélion ✨</strong><br>
+  Selen Editions</p>
+
+  <img src="cid:selenlogo" alt="Selen Editions" width="200" style="display:block;margin-top:20px;" />
+`,
   });
 }
 
@@ -107,6 +134,57 @@ function getOfferIntro(offer: string | null | undefined) {
   }
 }
 
+function getDiagnosticTitle(offer: string | null | undefined) {
+  switch (offer) {
+    case "prepa_qualiopi":
+      return "Diagnostic Selen : vous entrez dans une phase de structuration importante ✨";
+    case "audit_blanc":
+      return "Diagnostic Selen : votre base semble posée, mais un regard extérieur serait utile 🔎";
+    case "gestion_quotidienne":
+      return "Diagnostic Selen : vous gagneriez à alléger et structurer votre gestion au quotidien 🌿";
+    case "infos_uniquement":
+      return "Diagnostic Selen : vous avez surtout besoin de repères simples et concrets 📘";
+    case "garder_contact":
+      return "Diagnostic Selen : votre situation semble encore en mouvement, sans urgence immédiate 🌱";
+    default:
+      return "Diagnostic Selen : voici une première lecture de votre situation ✨";
+  }
+}
+
+function getDiagnosticSummary(offer: string | null | undefined) {
+  switch (offer) {
+    case "prepa_qualiopi":
+      return "Vos réponses montrent que vous êtes probablement à un moment charnière : il devient important de consolider votre organisation pour avancer plus sereinement vers les prochaines exigences qualité.";
+    case "audit_blanc":
+      return "Vos réponses laissent penser que certaines bases sont déjà présentes, mais qu’un audit blanc pourrait vous aider à repérer plus clairement ce qui est sécurisé… et ce qui mérite encore quelques ajustements.";
+    case "gestion_quotidienne":
+      return "Vos réponses montrent surtout un besoin de clarté et de fluidité dans la gestion administrative du quotidien, afin d’éviter l’accumulation, les oublis et la charge mentale inutile.";
+    case "infos_uniquement":
+      return "Vos réponses montrent qu’il n’est pas forcément nécessaire de passer tout de suite à un accompagnement poussé. En revanche, quelques repères concrets peuvent déjà vous faire gagner en compréhension et en sérénité.";
+    case "garder_contact":
+      return "Vos réponses montrent qu’il est sans doute plus juste, pour le moment, de vous laisser avancer à votre rythme, tout en gardant un point de contact si vos besoins évoluent dans les prochaines semaines.";
+    default:
+      return "Vos réponses nous donnent une première vision de votre situation et mettent en lumière quelques axes simples à clarifier pour avancer plus sereinement.";
+  }
+}
+
+function getDiagnosticNextStep(offer: string | null | undefined) {
+  switch (offer) {
+    case "prepa_qualiopi":
+      return "Le prochain pas le plus utile serait de clarifier vos bases administratives et qualité avant qu’un audit ou une échéance importante n’arrive.";
+    case "audit_blanc":
+      return "Le prochain pas le plus utile serait de faire un point objectif sur ce qui est déjà en place, pour éviter de naviguer à l’aveugle.";
+    case "gestion_quotidienne":
+      return "Le prochain pas le plus utile serait de simplifier votre organisation quotidienne, afin de gagner du temps et de réduire la pression administrative.";
+    case "infos_uniquement":
+      return "Le prochain pas le plus utile serait de vous appuyer sur quelques repères concrets pour mieux comprendre vos priorités, sans vous surcharger.";
+    case "garder_contact":
+      return "Le prochain pas le plus utile est peut-être simplement de garder un lien, puis de refaire un point au moment le plus opportun pour vous.";
+    default:
+      return "Le prochain pas le plus utile est de clarifier vos priorités administratives pour avancer avec plus de sérénité.";
+  }
+}
+
 export async function sendQuestionnaireFollowupEmail({
   to,
   organizationName,
@@ -120,8 +198,9 @@ export async function sendQuestionnaireFollowupEmail({
     "https://selion.selen-editions.fr/guide-dossier-stagiaire-qualiopi.pdf";
   const calendlyLink = "https://calendly.com/romaric-paymal/rdv-romaric-paymal";
 
-  const offerLabel = getOfferLabel(recommendedOfferPrimary);
-  const offerIntro = getOfferIntro(recommendedOfferPrimary);
+  const diagnosticTitle = getDiagnosticTitle(recommendedOfferPrimary);
+  const diagnosticSummary = getDiagnosticSummary(recommendedOfferPrimary);
+  const diagnosticNextStep = getDiagnosticNextStep(recommendedOfferPrimary);
 
   if (!EMAIL_SENDING_ENABLED) {
     console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
@@ -139,39 +218,48 @@ export async function sendQuestionnaireFollowupEmail({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
     subject: "Votre guide Selen + la suite la plus adaptée ✨",
+    attachments: [getLogoAttachment()],
     html: `
-      <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
+  <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
 
-      <p>Merci d’avoir pris le temps de répondre à notre questionnaire.</p>
+  <p><strong>Merci d’avoir pris le temps de répondre à notre questionnaire 🌟</strong></p>
 
-      <p>${offerIntro}</p>
+  <p><strong>${diagnosticTitle}</strong></p>
 
-      <p>Comme promis, voici le guide Selen consacré aux documents essentiels pour structurer vos dossiers stagiaires et sécuriser votre conformité Qualiopi :</p>
+  <p>${diagnosticSummary}</p>
 
-      <p style="margin:20px 0;">
-        <a href="${pdfLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
-          Télécharger le guide 📘
-        </a>
-      </p>
+  <p>👉 ${diagnosticNextStep}</p>
 
-      <p>Ce guide vous aidera à mieux comprendre les pièces clés liées aux dossiers clients : présentation de formation, dossier d’inscription, convocation, émargement, évaluations, contenus pédagogiques et questionnaire de satisfaction.</p>
+  <p>${offerIntro}</p>
 
-      <p>Si vous souhaitez aller plus loin, nous pouvons échanger sur <strong>${offerLabel}</strong> et voir ce qui serait le plus utile pour votre organisme.</p>
+  <p>Comme promis, voici votre <strong>guide Selen</strong>, conçu pour vous aider à structurer plus sereinement la gestion administrative de votre activité de formation.</p>
 
-      <p style="margin:20px 0;">
-        <a href="${calendlyLink}" style="background:#2b211b;color:#f3d9a2;padding:12px 18px;text-decoration:none;border-radius:6px;border:1px solid #7a5a31;">
-          Réserver un échange avec Romaric 📅
-        </a>
-      </p>
+  <p>Vous y découvrirez comment poser des bases solides, éviter certaines erreurs fréquentes… et avancer avec plus de clarté dans les prochaines étapes importantes.</p>
 
-      <p>Chez Selen, nous aimons aider les formateurs et organismes de formation à avancer avec plus de clarté, moins de brouillard administratif… et un peu plus de sérénité au quotidien ✨</p>
+  <p style="margin:20px 0;">
+    <a href="${pdfLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
+      Télécharger le guide 📘✨
+    </a>
+  </p>
 
-      <p>À très bientôt,<br>
-      <strong>Sélion ✨</strong><br>
-      Selen Editions</p>
+  <p>L’objectif de ce guide est simple : vous permettre de <strong>reprendre le contrôle sur votre organisation</strong>, gagner du temps au quotidien et vous concentrer pleinement sur votre mission de formateur 🌿</p>
 
-      <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-bottom:20px;" />
-    `,
+  <p>Si vous souhaitez aller plus loin, nous pouvons échanger tranquillement sur <strong>${offerLabel}</strong> et voir ensemble ce qui serait le plus utile pour votre organisme.</p>
+
+  <p style="margin:20px 0;">
+    <a href="${calendlyLink}" style="background:#2b211b;color:#f3d9a2;padding:12px 18px;text-decoration:none;border-radius:6px;border:1px solid #7a5a31;">
+      Réserver un échange avec Romaric 📅⭐
+    </a>
+  </p>
+
+  <p>Chez <strong>Selen</strong>, nous aimons aider les formateurs et organismes de formation à avancer avec moins de brouillard administratif… et beaucoup plus de sérénité au quotidien ✨</p>
+
+  <p>À très bientôt 🌱<br>
+  <strong>Sélion ✨</strong><br>
+  Selen Editions</p>
+
+  <img src="cid:selenlogo" alt="Selen Editions" width="200" style="display:block;margin-top:20px;" />
+`,
   });
 }
 
@@ -200,30 +288,36 @@ export async function sendProspectFollowupEmail({
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
-    subject: "Je me permets de vous relancer 🙂",
+    subject: "Votre diagnostic administratif Selen est prêt ⭐",
+    attachments: [getLogoAttachment()],
     html: `
-      <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
+  <p>Bonjour${organizationName ? ` ${organizationName}` : ""} ✨</p>
 
-      <p>Je me permets de revenir vers vous concernant mon précédent message au sujet de votre numéro de déclaration d’activité.</p>
+  <p>Je me permets de revenir vers vous suite à mon précédent message.</p>
 
-      <p>Beaucoup de nouveaux organismes de formation découvrent seulement après coup certains points administratifs importants, notamment autour de la conformité et de la préparation à Qualiopi.</p>
+  <p>Lorsque l’on développe une activité de formation, il est fréquent de découvrir progressivement certaines obligations administratives…  
+  et de ne pas toujours savoir par où commencer 🌿</p>
 
-      <p>Pour vous aider à faire le point, nous avons préparé un mini diagnostic gratuit :</p>
+  <p>Pour vous aider à y voir plus clair, nous avons préparé un <strong>mini diagnostic gratuit</strong> qui permet de faire rapidement le point sur votre organisation actuelle.</p>
 
-      <p style="margin:20px 0;">
-        <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
-          Répondre au questionnaire 🔮
-        </a>
-      </p>
+  <p style="margin:20px 0;">
+    <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
+      Répondre au questionnaire 🔮✨
+    </a>
+  </p>
 
-      <p>Cela prend environ 2 minutes et permet d’identifier rapidement les points déjà en place et ceux qui méritent d’être sécurisés.</p>
+  <p>Cela prend environ <strong>2 minutes</strong> ⏳  
+  et peut déjà vous aider à identifier les points sécurisés… et ceux qui méritent simplement un peu d’attention.</p>
 
-      <p>À bientôt,<br>
-      <strong>Sélion ✨</strong><br>
-      Selen Editions</p>
+  <p>Si ce sujet ne vous concerne pas pour le moment ou si vous ne souhaitez pas être accompagné, aucun souci 🙂  
+  <strong>Sans réponse de votre part, nous ne vous recontacterons pas.</strong></p>
 
-      <img src="https://selion.selen-editions.fr/logo-selen-editions.png" alt="Selen Editions" style="max-width:200px;margin-top:20px;" />
-    `,
+  <p>À très bientôt 🌱<br>
+  <strong>Sélion ✨</strong><br>
+  Selen Editions</p>
+
+  <img src="cid:selenlogo" alt="Selen Editions" width="200" style="display:block;margin-top:20px;" />
+`,
   });
 }
 
@@ -242,6 +336,7 @@ export async function sendTestEmail() {
     from: "Selion ✨ <selion@selen-editions.fr>",
     to: ["crislil.redaction@gmail.com"],
     subject: "Test Selion ✨",
+    attachments: [getLogoAttachment()],
     html: `<p>Test email Selion ✨</p>`,
   });
 }

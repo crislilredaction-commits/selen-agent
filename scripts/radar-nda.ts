@@ -346,8 +346,8 @@ async function main() {
     console.log("11. Clés historique SIRET =", historySiretKeys.size);
     console.log("12. Clés historique NOM =", historyNameKeys.size);
 
-    const newOrganizations = extracted.filter((row) => {
-      const comparisonKey = buildComparisonKey(row);
+    const newOrganizations = snapshotRows.filter((row) => {
+      const comparisonKey = row.comparison_key;
       const siretKey = row.siret ? `SIRET:${row.siret}` : "";
       const nameKey = buildNameKey(row.organization_name);
 
