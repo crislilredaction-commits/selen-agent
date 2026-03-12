@@ -44,8 +44,6 @@ export async function sendProspectQuestionnaireEmail({
 
     subject: "Félicitations pour cette nouvelle étape ✨",
 
-    attachments: [getLogoAttachment()],
-
     html: `
   <p>Bonjour ✨</p>
 
