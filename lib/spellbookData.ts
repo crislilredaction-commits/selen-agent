@@ -47,7 +47,7 @@ export const spellbookEntries: SpellbookEntry[] = [
       "Accompagnement à la constitution du dossier",
       "Préparation à l’audit",
     ],
-    price: "900 €",
+    price: "900 € audit initial • 1200€ audit de surveillance ou de renouvellement",
   },
   {
     id: "selen-daily",

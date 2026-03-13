@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import SelionCompanion from "../components/SelionCompanion";
 import MeetingsSalesManager from "../components/MeetingsSalesManager";
 import DashboardReminders from "../components/DashboardReminders";
