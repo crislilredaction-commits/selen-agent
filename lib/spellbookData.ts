@@ -68,7 +68,8 @@ export const spellbookEntries: SpellbookEntry[] = [
       "Classement des documents",
       "Agent administratif dédié",
     ],
-    price: "9 € par apprenant",
+    price:
+      "160 € / mois (≤25 apprenants) • 320 € / mois (≤50) • 560 € / mois (>50)",
   },
   {
     id: "selen-news",
