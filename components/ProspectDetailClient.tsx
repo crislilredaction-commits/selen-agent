@@ -91,7 +91,7 @@ const ORDER_OFFERS: Record<
   selen_prepa: {
     label: "Selen Prepa",
     price:
-      "900 € audit initial • 1200€ audit de surveillance ou de renouvellement",
+      "900 € audit initial • 1200 € audit de surveillance ou de renouvellement",
     shortDescription: "Système administratif conforme clé en main",
   },
   selen_daily: {
