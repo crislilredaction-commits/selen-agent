@@ -4,7 +4,7 @@ async function main() {
   console.log("Test premier mail — démarrage");
 
   await sendProspectQuestionnaireEmail({
-    to: "crislil.redaction@gmail.com",
+    to: "lilbarthaux@outlook.fr",
     organizationName: "Test Selen",
     prospectId: "test-prospect-id",
   });

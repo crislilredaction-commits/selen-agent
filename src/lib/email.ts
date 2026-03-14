@@ -39,43 +39,41 @@ export async function sendProspectQuestionnaireEmail({
 
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
-
     to,
-
-    subject: "Félicitations pour cette nouvelle étape ✨",
-
+    subject: `${firstName}, votre NDA en poche !`,
     html: `
-  <p>Bonjour ✨</p>
 
-  <p><strong>Félicitations pour cette nouvelle étape dans votre activité de formation 🎉</strong></p>
+<p>Bonjour ${firstName || ""},</p>
 
-  <p>Vous le savez peut-être déjà : transmettre, former, accompagner… c’est une chose 🌟  
-  Mais gérer toute la partie administrative au quotidien, c’en est une autre.</p>
+<p>Félicitations pour cette nouvelle étape dans votre activité de formation.</p>
 
-  <p>Depuis plusieurs années, nous accompagnons et auditons des centaines de formateurs et d’organismes de formation.  
-  Et une réalité revient souvent : <strong>les papiers, ce n’est pas ce qu’ils préfèrent</strong> 😅</p>
+<pVotre organisme vient récemment d’obtenir son numéro de déclaration d’activité.</p>
 
-  <p>Entre la gestion du quotidien, les obligations administratives et les grandes étapes comme <strong>Qualiopi</strong> ou certains audits, il est facile de se sentir un peu perdu… ou de remettre certaines choses à plus tard 🧭</p>
+<p>À ce moment-là, beaucoup de formateurs découvrent une réalité importante :  
+<strong>pour rendre leurs formations finançables, la prochaine étape devient souvent la certification Qualiopi.</strong></p>
 
-  <p>Chez <strong>Selen Editions</strong>, notre mission est justement de rendre tout cela plus simple, plus clair et plus rassurant ✨</p>
+<p>Entre les obligations administratives, la structuration des dossiers stagiaires, la préparation de l’audit ou simplement la gestion quotidienne… il est facile de ne pas savoir par où commencer.</p>
 
-  <p>Cette semaine, nous proposons un <strong>mini diagnostic gratuit</strong> pour mieux comprendre où vous en êtes aujourd’hui.</p>
+<p>Selon votre situation, il est possible soit d’être accompagné dans la préparation de cette étape, soit simplement de <strong>réduire la charge administrative liée à votre activité</strong>.</p>
 
-  <p>⭐ En remerciement, vous recevrez ensuite un <strong>guide offert</strong> pour vous aider à structurer plus sereinement votre gestion administrative, éviter les erreurs fréquentes et avancer avec davantage de clarté…</p>
+<p>Pour vous aider à faire le point rapidement, nous avons préparé un mini diagnostic gratuit.</p>
 
-  <p style="margin:20px 0;">
-    <a href="${questionnaireLink}" style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;">
-      Répondre au questionnaire 🔮
-    </a>
-  </p>
+<p style="margin:20px 0;">
+<a href="${questionnaireLink}" 
+style="background:#c25b12;color:white;padding:12px 18px;text-decoration:none;border-radius:6px;display:inline-block;">
+Accéder au diagnostic
+</a>
+</p>
 
-  <p>Cela prend environ <strong>2 minutes</strong> ⏳  
-  et peut déjà vous aider à voir plus clairement les prochains points à sécuriser.</p>
+<p>Il prend environ <strong>2 minutes</strong> et permet d’identifier les éléments déjà en place ainsi que les prochains points à sécuriser.</p>
 
-  <p>À bientôt 🌿<br>
-  <strong>Sélion ✨</strong><br>
-  Selen Editions
-  www.selen-editions.fr</p>
+<p>Si vous le souhaitez, nous pourrons ensuite vous faire un retour personnalisé.</p>
+
+<p>Excellente journée à vous,<br>
+<strong>Sélion</strong><br>
+Selen Editions<br>
+www.selen-editions.fr</p>
+
 `,
   });
 }
