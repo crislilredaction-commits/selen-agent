@@ -19,10 +19,12 @@ export async function sendProspectQuestionnaireEmail({
   to,
   organizationName,
   prospectId,
+  firstName,
 }: {
   to: string;
   organizationName?: string | null;
   prospectId: string;
+  firstName?: string | null;
 }) {
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
 
@@ -40,10 +42,10 @@ export async function sendProspectQuestionnaireEmail({
   return await resend.emails.send({
     from: "Selion ✨ <hello@selen-editions.fr>",
     to,
-    subject: `${firstName}, votre NDA en poche !`,
+    subject: `${firstName ? `${firstName}, ` : ""}votre NDA en poche !`,
     html: `
 
-<p>Bonjour ${firstName || ""},</p>
+<p>Bonjour${firstName ? ` ${firstName}` : ""},</p>
 
 <p>Félicitations pour cette nouvelle étape dans votre activité de formation.</p>
 
