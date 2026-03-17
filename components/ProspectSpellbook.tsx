@@ -410,7 +410,7 @@ export default function ProspectSpellbook({ onClose }: Props) {
             <EntryBtn
               key={e.id}
               label={e.label}
-              sub={e.subtitle}
+              sub={e.subtitle ?? ""}
               onClick={() => setCurrentPage(e.id)}
             />
           ))}
