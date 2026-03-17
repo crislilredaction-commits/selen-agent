@@ -270,10 +270,7 @@ async function upsertProspects(orgs: SnapshotRow[]): Promise<number> {
 
     const { data, error } = await supabase
       .from("prospects")
-      .upsert(batch, {
-        onConflict: "nda_number",
-        ignoreDuplicates: true,
-      })
+      .insert(batch)
       .select("id");
 
     if (error) throw new Error(`upsertProspects: ${error.message}`);
