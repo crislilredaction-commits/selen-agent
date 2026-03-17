@@ -20,7 +20,7 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 const HISTORY_DAYS = 3;
 const SNAPSHOT_BATCH_SIZE = 1000;
-const HISTORY_PAGE_SIZE = 20000;
+const HISTORY_PAGE_SIZE = 1000;
 const PROSPECT_BATCH_SIZE = 500;
 
 type CsvRow = Record<string, string>;
