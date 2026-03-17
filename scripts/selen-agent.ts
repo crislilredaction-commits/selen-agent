@@ -204,7 +204,7 @@ async function main() {
     // ── 3. Enrichissement — non bloquant ──────────────────────────────────
     // Un crash d'enrichissement ne doit pas empêcher les envois du backlog
     // déjà enrichi lors des runs précédents.
-    await runScriptSafe("enrich-prospects.ts");
+    await runScriptSafe("enrich-prospects-V3.ts");
 
     // ── 4. Purge — non bloquant ───────────────────────────────────────────
     // Nettoyage cosmétique, pas critique pour le pipeline d'envoi.

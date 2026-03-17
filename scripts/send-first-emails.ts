@@ -172,22 +172,50 @@ async function cleanupStaleSending(): Promise<void> {
  * Garantit qu'un même email n'est jamais envoyé deux fois en parallèle.
  */
 async function claimForSending(prospectId: string): Promise<boolean> {
-  const { data, error } = await supabase
+  const { data: currentRow, error: readError } = await supabase
     .from("prospects")
-    .update({ first_email_status: "sending" })
+    .select("first_email_status")
     .eq("id", prospectId)
-    .or(
-      "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
-    )
-    .select("id");
+    .single();
 
-  if (error) {
+  if (readError) {
     throw new Error(
-      `claimForSending erreur pour ${prospectId}: ${error.message}`,
+      `claimForSending lecture erreur pour ${prospectId}: ${readError.message}`,
     );
   }
 
-  return (data?.length ?? 0) > 0;
+  const currentStatus = currentRow?.first_email_status ?? null;
+
+  const allowed =
+    currentStatus === null ||
+    currentStatus === "not_sent" ||
+    currentStatus === "failed";
+
+  if (!allowed) {
+    return false;
+  }
+
+  let updateQuery = supabase
+    .from("prospects")
+    .update({ first_email_status: "sending" })
+    .eq("id", prospectId);
+
+  if (currentStatus === null) {
+    updateQuery = updateQuery.is("first_email_status", null);
+  } else {
+    updateQuery = updateQuery.eq("first_email_status", currentStatus);
+  }
+
+  const { data: updatedRows, error: updateError } =
+    await updateQuery.select("id");
+
+  if (updateError) {
+    throw new Error(
+      `claimForSending update erreur pour ${prospectId}: ${updateError.message}`,
+    );
+  }
+
+  return (updatedRows?.length ?? 0) > 0;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────

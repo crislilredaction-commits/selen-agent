@@ -35,9 +35,3 @@ jobs:
 
       - name: Run Selion full agent
         run: npx tsx scripts/selen-agent.ts
-
-      - name: Send first emails
-        run: npx tsx scripts/send-first-emails.ts
-
-      - name: Send followups
-        run: npx tsx scripts/send-followups.ts

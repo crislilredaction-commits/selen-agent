@@ -92,21 +92,50 @@ async function cleanupStaleSendingFollowup(): Promise<void> {
  * la mise à jour touche 0 lignes → retourne false → on saute.
  */
 async function claimForFollowup(prospectId: string): Promise<boolean> {
-  const { data, error } = await supabase
+  const { data: currentRow, error: readError } = await supabase
     .from("prospects")
-    .update({ followup_email_status: "sending_followup" })
+    .select("followup_email_status")
     .eq("id", prospectId)
-    .or(
-      "followup_email_status.is.null,followup_email_status.eq.failed,followup_email_status.eq.not_sent",
-    )
-    .select("id");
+    .single();
 
-  if (error) {
-    console.error(`claimForFollowup erreur pour ${prospectId}:`, error.message);
+  if (readError) {
+    throw new Error(
+      `claimForFollowup lecture erreur pour ${prospectId}: ${readError.message}`,
+    );
+  }
+
+  const currentStatus = currentRow?.followup_email_status ?? null;
+
+  const allowed =
+    currentStatus === null ||
+    currentStatus === "not_sent" ||
+    currentStatus === "failed";
+
+  if (!allowed) {
     return false;
   }
 
-  return (data?.length ?? 0) > 0;
+  let updateQuery = supabase
+    .from("prospects")
+    .update({ followup_email_status: "sending_followup" })
+    .eq("id", prospectId);
+
+  if (currentStatus === null) {
+    updateQuery = updateQuery.is("followup_email_status", null);
+  } else {
+    updateQuery = updateQuery.eq("followup_email_status", currentStatus);
+  }
+
+  const { data: updatedRows, error: updateError } =
+    await updateQuery.select("id");
+
+  if (updateError) {
+    throw new Error(
+      `claimForFollowup update erreur pour ${prospectId}: ${updateError.message}`,
+    );
+  }
+
+  return (updatedRows?.length ?? 0) > 0;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
