@@ -49,7 +49,7 @@ function Sidebar({ activePath }: { activePath: string }) {
           className="relative flex-shrink-0"
           style={{ width: 111, height: 111 }}
         >
-          <SelionCompanion compact />
+          <SelionCompanion />
         </div>
         <div>
           <p className="sidebar-selion-label">Sélion</p>
