@@ -182,8 +182,9 @@ async function claimForSending(prospectId: string): Promise<boolean> {
     .select("id");
 
   if (error) {
-    console.error(`claimForSending erreur pour ${prospectId}:`, error.message);
-    return false;
+    throw new Error(
+      `claimForSending erreur pour ${prospectId}: ${error.message}`,
+    );
   }
 
   return (data?.length ?? 0) > 0;
