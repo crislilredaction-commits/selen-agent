@@ -4,12 +4,28 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import * as cheerio from "cheerio";
 
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} manquant`);
+  return value;
+}
+
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+  getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
 );
 
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+/**
+ * Nombre de prospects traités par run.
+ * Garder à 200 max pour rester dans les timeouts de l'orchestrateur.
+ */
 const ENRICHMENT_BATCH_SIZE = 200;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ProspectRow = {
   id: string;
@@ -45,12 +61,12 @@ type ContactExtractionResult = {
   qualiopi: boolean;
 };
 
-async function fetchHtml(url: string) {
+// ─── Fetch HTML ───────────────────────────────────────────────────────────────
+
+async function fetchHtml(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-      },
+      headers: { "User-Agent": "Mozilla/5.0" },
       redirect: "follow",
     });
 
@@ -65,7 +81,9 @@ async function fetchHtml(url: string) {
   }
 }
 
-function extractEmails(text: string) {
+// ─── Extraction emails / téléphones ──────────────────────────────────────────
+
+function extractEmails(text: string): string[] {
   const matches = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
 
   const blockedPatterns = [
@@ -91,7 +109,7 @@ function extractEmails(text: string) {
   );
 }
 
-function extractPhones(text: string) {
+function extractPhones(text: string): string[] {
   const matches =
     text.match(
       /(?:\+33[\s.-]?[1-9](?:[\s.-]?\d{2}){4}|0[1-9](?:[\s.-]?\d{2}){4})/g,
@@ -102,23 +120,14 @@ function extractPhones(text: string) {
 
 function scoreEmail(email: string): number {
   let score = 0;
-
-  if (/contact|info|bonjour|hello|formation|admin|accueil/i.test(email)) {
+  if (/contact|info|bonjour|hello|formation|admin|accueil/i.test(email))
     score += 5;
-  }
-
-  if (!/no-reply|noreply|do-not-reply/i.test(email)) {
-    score += 3;
-  }
-
-  if (email.length < 40) {
-    score += 1;
-  }
-
+  if (!/no-reply|noreply|do-not-reply/i.test(email)) score += 3;
+  if (email.length < 40) score += 1;
   return score;
 }
 
-function chooseBestEmail(emails: string[]) {
+function chooseBestEmail(emails: string[]): string | null {
   if (!emails.length) return null;
 
   const cleaned = emails.filter(
@@ -136,10 +145,11 @@ function chooseBestEmail(emails: string[]) {
   );
 }
 
-function chooseBestPhone(phones: string[]) {
-  if (!phones.length) return null;
+function chooseBestPhone(phones: string[]): string | null {
   return phones[0] ?? null;
 }
+
+// ─── Annuaire Entreprises ─────────────────────────────────────────────────────
 
 async function searchAnnuaireEntreprises(
   name: string,
@@ -170,7 +180,12 @@ async function searchAnnuaireEntreprises(
   }
 }
 
-async function searchDuckDuckGo(name: string, city?: string | null) {
+// ─── DuckDuckGo ───────────────────────────────────────────────────────────────
+
+async function searchDuckDuckGo(
+  name: string,
+  city?: string | null,
+): Promise<string | null> {
   try {
     const query = encodeURIComponent(`${name} ${city ?? ""} formation`.trim());
     const url = `https://duckduckgo.com/html/?q=${query}`;
@@ -223,7 +238,7 @@ async function searchDuckDuckGo(name: string, city?: string | null) {
       "youtube.com",
     ];
 
-    if (blockedDomains.some((domain) => decodedUrl.includes(domain))) {
+    if (blockedDomains.some((domain) => decodedUrl!.includes(domain))) {
       console.log(`DDG: domaine ignoré pour ${name}: ${decodedUrl}`);
       return null;
     }
@@ -235,14 +250,14 @@ async function searchDuckDuckGo(name: string, city?: string | null) {
   }
 }
 
+// ─── Extraction contacts depuis le site ───────────────────────────────────────
+
 function pickFirstMatchingUrl(
   urls: string[],
   patterns: RegExp[],
 ): string | null {
   for (const url of urls) {
-    if (patterns.some((pattern) => pattern.test(url))) {
-      return url;
-    }
+    if (patterns.some((pattern) => pattern.test(url))) return url;
   }
   return null;
 }
@@ -273,7 +288,6 @@ async function extractContacts(
     if (!html) continue;
 
     const $ = cheerio.load(html);
-
     const bodyText = $("body").text();
     const hrefs = $("a")
       .map((_, el) => $(el).attr("href") ?? "")
@@ -293,19 +307,14 @@ async function extractContacts(
     const textEmails = extractEmails(bodyText + "\n" + html);
     const textPhones = extractPhones(bodyText + "\n" + html);
 
-    for (const email of [...mailtoEmails, ...textEmails]) {
-      allEmails.add(email);
-    }
-
-    for (const phone of textPhones) {
-      allPhones.add(phone);
-    }
+    for (const email of [...mailtoEmails, ...textEmails]) allEmails.add(email);
+    for (const phone of textPhones) allPhones.add(phone);
 
     for (const href of hrefs) {
       try {
         allUrls.add(new URL(href, website).toString());
       } catch {
-        // ignore
+        // ignore les URLs invalides
       }
     }
 
@@ -336,25 +345,54 @@ async function extractContacts(
   };
 }
 
-async function main() {
-  console.log("Robot enrichissement V5 démarrage");
+// ─── Marquage in_progress (test-and-set) ─────────────────────────────────────
 
-  const todayParis = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+/**
+ * Tente de réserver le prospect pour ce run en passant son statut à
+ * 'in_progress'. La condition `.in("enrichment_status", ["pending", "error"])`
+ * est un test-and-set : si un autre run a déjà pris ce prospect, la mise à
+ * jour ne touche aucune ligne et on retourne false.
+ *
+ * Garantit qu'un prospect n'est jamais enrichi deux fois en parallèle.
+ */
+async function claimProspect(prospectId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("prospects")
+    .update({ enrichment_status: "in_progress" })
+    .eq("id", prospectId)
+    .in("enrichment_status", ["pending", "error"])
+    .select("id");
+
+  if (error) {
+    console.error(`claimProspect erreur pour ${prospectId}:`, error.message);
+    return false;
+  }
+
+  // Si data est vide → une autre instance a déjà pris ce prospect
+  return (data?.length ?? 0) > 0;
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+async function main() {
+  console.log("Robot enrichissement V6 démarrage");
+
+  // CORRECTIF : suppression du filtre .gte("created_at", today).
+  // On traite TOUS les prospects en pending ou error, quelle que soit
+  // leur date de création (backlog-safe).
+  //
+  // On retire aussi le filtre .is("email_found", null) : un prospect
+  // peut être en status "error" avec un email_found partiel — il doit
+  // être re-tenté.
 
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select("*")
     .eq("source", "selion_1_nda")
     .eq("is_visible", true)
-    .is("email_found", null)
     .in("enrichment_status", ["pending", "error"])
-    .gte("created_at", `${todayParis}T00:00:00+01:00`)
-    .order("created_at", { ascending: false })
+    .is("last_contact_at", null)
+    .order("created_at", { ascending: true })
     .limit(ENRICHMENT_BATCH_SIZE);
 
   if (error) {
@@ -366,89 +404,128 @@ async function main() {
     return;
   }
 
-  console.log(`Prospects à enrichir : ${prospects.length}`);
+  console.log(`Prospects candidats à l'enrichissement : ${prospects.length}`);
+
+  let enriched = 0;
+  let skipped = 0;
+  let failed = 0;
 
   for (const prospect of prospects as ProspectRow[]) {
     const name = prospect.organization_name;
-    if (!name) continue;
-
-    console.log("Recherche :", name);
-
-    let website: string | null =
-      prospect.website_found ?? prospect.website ?? null;
-    let phone: string | null = prospect.phone_found ?? null;
-    let email: string | null = prospect.email_found ?? prospect.email ?? null;
-    let linkedinUrl: string | null = prospect.linkedin_url ?? null;
-    let facebookUrl: string | null = prospect.facebook_url ?? null;
-    let whatsappUrl: string | null = prospect.whatsapp_url ?? null;
-    let qualiopi = false;
-    let isOrganismeFormation = false;
-    let naf: string | null = null;
-
-    const annuaire = await searchAnnuaireEntreprises(name);
-
-    if (annuaire) {
-      website = website ?? annuaire.website;
-      phone = phone ?? annuaire.phone;
-      qualiopi = annuaire.isQualiopi;
-      isOrganismeFormation = annuaire.isOrganismeFormation;
-      naf = annuaire.naf;
+    if (!name) {
+      skipped++;
+      continue;
     }
 
-    if (!website) {
-      website = await searchDuckDuckGo(
-        name,
-        prospect.city ?? annuaire?.city ?? null,
+    // ── Test-and-set : réserver ce prospect pour ce run ───────────────────────
+    const claimed = await claimProspect(prospect.id);
+    if (!claimed) {
+      console.log(`Skipped (déjà pris) → ${name}`);
+      skipped++;
+      continue;
+    }
+
+    console.log(`Enrichissement → ${name}`);
+
+    try {
+      let website: string | null =
+        prospect.website_found ?? prospect.website ?? null;
+      let phone: string | null = prospect.phone_found ?? null;
+      let email: string | null = prospect.email_found ?? prospect.email ?? null;
+      let linkedinUrl: string | null = prospect.linkedin_url ?? null;
+      let facebookUrl: string | null = prospect.facebook_url ?? null;
+      let whatsappUrl: string | null = prospect.whatsapp_url ?? null;
+      let qualiopi = false;
+      let isOrganismeFormation = false;
+      let naf: string | null = null;
+
+      // ── Annuaire Entreprises ───────────────────────────────────────────────
+      const annuaire = await searchAnnuaireEntreprises(name);
+
+      if (annuaire) {
+        website = website ?? annuaire.website;
+        phone = phone ?? annuaire.phone;
+        qualiopi = annuaire.isQualiopi;
+        isOrganismeFormation = annuaire.isOrganismeFormation;
+        naf = annuaire.naf;
+      }
+
+      // ── DuckDuckGo si pas encore de site ──────────────────────────────────
+      if (!website) {
+        website = await searchDuckDuckGo(
+          name,
+          prospect.city ?? annuaire?.city ?? null,
+        );
+      }
+
+      // ── Extraction contacts depuis le site ────────────────────────────────
+      if (website) {
+        const contacts = await extractContacts(website);
+        email = email ?? contacts.email ?? null;
+        phone = phone ?? contacts.phone ?? null;
+        linkedinUrl = linkedinUrl ?? contacts.linkedinUrl ?? null;
+        facebookUrl = facebookUrl ?? contacts.facebookUrl ?? null;
+        whatsappUrl = whatsappUrl ?? contacts.whatsappUrl ?? null;
+        qualiopi = qualiopi || Boolean(contacts.qualiopi);
+      }
+
+      // ── Calcul statut final ───────────────────────────────────────────────
+      const hasUsefulData =
+        Boolean(website) ||
+        Boolean(email) ||
+        Boolean(phone) ||
+        Boolean(linkedinUrl) ||
+        Boolean(facebookUrl) ||
+        Boolean(whatsappUrl);
+
+      const enrichmentStatus = hasUsefulData ? "enriched" : "no_result";
+      const computedProspectType = qualiopi ? "qp_ok" : "nouvel_entrant";
+
+      // ── Écriture en base ──────────────────────────────────────────────────
+      const { error: updateError } = await supabase
+        .from("prospects")
+        .update({
+          website_found: website,
+          email_found: email,
+          phone_found: phone,
+          linkedin_url: linkedinUrl,
+          facebook_url: facebookUrl,
+          whatsapp_url: whatsappUrl,
+          already_qualiopi: qualiopi,
+          naf_code: naf,
+          prospect_type: computedProspectType,
+          enrichment_status: enrichmentStatus,
+          enrichment_source: "annuaire_plus_ddg_v6",
+          enriched_at: new Date().toISOString(),
+        })
+        .eq("id", prospect.id);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      enriched++;
+      console.log(
+        `OK → ${name} | OF: ${isOrganismeFormation ? "oui" : "non"} | QP: ${qualiopi ? "oui" : "non"} | site: ${website ?? "aucun"} | email: ${email ?? "aucun"} | phone: ${phone ?? "aucun"} | status: ${enrichmentStatus}`,
       );
+    } catch (err) {
+      // ── Erreur sur ce prospect : on le repassse en "error" pour retry ─────
+      failed++;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Erreur enrichissement ${name}: ${message}`);
+
+      await supabase
+        .from("prospects")
+        .update({
+          enrichment_status: "error",
+        })
+        .eq("id", prospect.id);
     }
-
-    if (website) {
-      const contacts = await extractContacts(website);
-
-      email = email ?? contacts.email ?? null;
-      phone = phone ?? contacts.phone ?? null;
-      linkedinUrl = linkedinUrl ?? contacts.linkedinUrl ?? null;
-      facebookUrl = facebookUrl ?? contacts.facebookUrl ?? null;
-      whatsappUrl = whatsappUrl ?? contacts.whatsappUrl ?? null;
-      qualiopi = qualiopi || Boolean(contacts.qualiopi);
-    }
-
-    const hasUsefulData =
-      Boolean(website) ||
-      Boolean(email) ||
-      Boolean(phone) ||
-      Boolean(linkedinUrl) ||
-      Boolean(facebookUrl) ||
-      Boolean(whatsappUrl);
-
-    const status = hasUsefulData ? "enriched" : "no_result";
-
-    const computedProspectType = qualiopi ? "qp_ok" : "nouvel_entrant";
-
-    await supabase
-      .from("prospects")
-      .update({
-        website_found: website,
-        email_found: email,
-        phone_found: phone,
-        linkedin_url: linkedinUrl,
-        facebook_url: facebookUrl,
-        whatsapp_url: whatsappUrl,
-        already_qualiopi: qualiopi,
-        naf_code: naf,
-        prospect_type: computedProspectType,
-        enrichment_status: status,
-        enrichment_source: "annuaire_plus_ddg_v5",
-        enriched_at: new Date().toISOString(),
-      })
-      .eq("id", prospect.id);
-
-    console.log(
-      `OK → ${name} | OF-annuaire: ${isOrganismeFormation ? "oui" : "non"} | qualiopi: ${qualiopi ? "oui" : "non"} | site: ${website ?? "aucun"} | email: ${email ?? "aucun"} | phone: ${phone ?? "aucun"} | status: ${status}`,
-    );
   }
 
-  console.log("Robot terminé");
+  console.log(
+    `Robot enrichissement terminé — enrichis: ${enriched}, skipped: ${skipped}, erreurs: ${failed}`,
+  );
 }
 
 main().catch((error) => {

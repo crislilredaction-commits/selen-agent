@@ -4,11 +4,11 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { parse } from "csv-parse/sync";
 
+// ─── Env ──────────────────────────────────────────────────────────────────────
+
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} manquant`);
-  }
+  if (!value) throw new Error(`${name} manquant`);
   return value;
 }
 
@@ -18,12 +18,27 @@ const NDA_CSV_URL = getRequiredEnv("NDA_CSV_URL");
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-const HISTORY_DAYS = 3;
+// ─── Config ───────────────────────────────────────────────────────────────────
+
 const SNAPSHOT_BATCH_SIZE = 1000;
 const HISTORY_PAGE_SIZE = 1000;
 const PROSPECT_BATCH_SIZE = 500;
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type CsvRow = Record<string, string>;
+
+type SnapshotRow = {
+  snapshot_date: string;
+  siret: string | null;
+  nda_number: string | null;
+  organization_name: string;
+  city: string | null;
+  comparison_key: string;
+  raw_json: unknown;
+};
+
+// ─── Normalisation ────────────────────────────────────────────────────────────
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "")
@@ -42,41 +57,38 @@ function onlyDigits(value: string | null | undefined): string {
 function isValidOrganization(row: {
   organization_name: string;
   siret: string;
-}) {
+}): boolean {
   if (!row.organization_name?.trim()) return false;
-
   const siret = onlyDigits(row.siret);
   if (!siret || siret.length !== 14) return false;
-
   return true;
 }
 
+// ─── Timezone Paris ───────────────────────────────────────────────────────────
+
+/**
+ * Retourne la date courante à Paris au format YYYY-MM-DD.
+ * Utilise Intl.DateTimeFormat — pas de concaténation de chaîne ISO.
+ */
 function getTodayParis(): string {
-  const now = new Date();
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Paris",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(now);
+  }).format(new Date());
 }
 
-function getPastParisDate(baseDate: string, daysBack: number): string {
-  const d = new Date(`${baseDate}T12:00:00`);
-  d.setDate(d.getDate() - daysBack);
-  return d.toISOString().slice(0, 10);
-}
+// ─── CSV parsing ──────────────────────────────────────────────────────────────
 
 function guessField(row: CsvRow, candidates: string[]): string {
   const entries = Object.entries(row);
-
   for (const candidate of candidates) {
     const found = entries.find(([key]) =>
       normalizeText(key).includes(normalizeText(candidate)),
     );
     if (found) return found[1] ?? "";
   }
-
   return "";
 }
 
@@ -116,22 +128,18 @@ function buildComparisonKey(item: {
   siret: string;
   organization_name: string;
   city: string;
-}) {
+}): string {
   const nda = onlyDigits(item.nda_number ?? "");
   if (nda) return `NDA:${nda}`;
-
   if (item.siret) return `SIRET:${item.siret}`;
-
   return `ORG:${normalizeText(item.organization_name)}::CITY:${normalizeText(item.city)}`;
 }
 
-function buildNameKey(name: string | null | undefined) {
-  return `NAME:${normalizeText(name)}`;
-}
+// ─── Fetch CSV ────────────────────────────────────────────────────────────────
 
 async function fetchCsvWithTimeout(
   url: string,
-  timeoutMs = 60000,
+  timeoutMs = 60_000,
 ): Promise<string> {
   console.log("1. Téléchargement du CSV...");
 
@@ -148,69 +156,198 @@ async function fetchCsvWithTimeout(
 
     const csvText = await response.text();
     console.log("3. CSV téléchargé, longueur =", csvText.length);
-
     return csvText;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function fetchHistoryRows(
-  historyFrom: string,
-  today: string,
-): Promise<
-  Array<{
-    comparison_key: string | null;
-    siret: string | null;
-    organization_name: string | null;
-  }>
-> {
-  const historyRows: Array<{
-    comparison_key: string | null;
-    siret: string | null;
-    organization_name: string | null;
-  }> = [];
+// ─── Historique : dernier snapshot connu ─────────────────────────────────────
 
+/**
+ * Retourne la date du snapshot le plus récent ANTÉRIEUR à aujourd'hui.
+ *
+ * C'est le cœur du correctif : on ne compare plus sur une fenêtre fixe
+ * de N jours, mais toujours contre le dernier état connu du registre.
+ *
+ * Avantage : si le robot est absent 4 jours (week-end, panne),
+ * on compare quand même contre le bon snapshot — aucun faux positif.
+ */
+async function fetchLastSnapshotDate(today: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("nda_snapshots")
+    .select("snapshot_date")
+    .lt("snapshot_date", today)
+    .order("snapshot_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`fetchLastSnapshotDate: ${error.message}`);
+  return data?.snapshot_date ?? null;
+}
+
+/**
+ * Charge toutes les comparison_key du snapshot de référence (paginé).
+ * On ne charge QUE les clés — pas les colonnes larges — pour rester léger
+ * même sur 150k lignes.
+ */
+async function fetchReferenceKeys(referenceDate: string): Promise<Set<string>> {
+  const keys = new Set<string>();
   let rangeFrom = 0;
 
   while (true) {
     const { data, error } = await supabase
       .from("nda_snapshots")
-      .select("comparison_key, siret, organization_name")
-      .gte("snapshot_date", historyFrom)
-      .lt("snapshot_date", today)
+      .select("comparison_key")
+      .eq("snapshot_date", referenceDate)
       .range(rangeFrom, rangeFrom + HISTORY_PAGE_SIZE - 1);
 
-    if (error) {
-      throw new Error(error.message);
-    }
+    if (error) throw new Error(`fetchReferenceKeys: ${error.message}`);
+    if (!data || data.length === 0) break;
 
-    if (!data || data.length === 0) {
-      break;
+    for (const row of data) {
+      if (row.comparison_key) keys.add(row.comparison_key);
     }
-
-    historyRows.push(...data);
 
     console.log(
-      `Historique récupéré : ${historyRows.length} lignes (page à partir de ${rangeFrom})`,
+      `Clés de référence chargées : ${keys.size} (page à partir de ${rangeFrom})`,
     );
 
-    if (data.length < HISTORY_PAGE_SIZE) {
-      break;
-    }
-
+    if (data.length < HISTORY_PAGE_SIZE) break;
     rangeFrom += HISTORY_PAGE_SIZE;
   }
 
-  return historyRows;
+  return keys;
 }
+
+// ─── Snapshots ────────────────────────────────────────────────────────────────
+
+async function upsertSnapshots(rows: SnapshotRow[]): Promise<void> {
+  for (let i = 0; i < rows.length; i += SNAPSHOT_BATCH_SIZE) {
+    const batch = rows.slice(i, i + SNAPSHOT_BATCH_SIZE);
+
+    const { error } = await supabase.from("nda_snapshots").upsert(batch, {
+      onConflict: "snapshot_date,comparison_key",
+      ignoreDuplicates: true,
+    });
+
+    if (error) throw new Error(`upsertSnapshots: ${error.message}`);
+
+    console.log(
+      `Snapshots upsertés : ${Math.min(i + batch.length, rows.length)} / ${rows.length}`,
+    );
+  }
+}
+
+// ─── Prospects ────────────────────────────────────────────────────────────────
+
+/**
+ * Insère les nouveaux prospects via upsert sur nda_number.
+ *
+ * La contrainte UNIQUE partielle sur nda_number (côté DB) garantit
+ * qu'un prospect déjà existant n'est jamais dupliqué, même en cas de
+ * double run ou de retry. Pas besoin de pré-charger les NDA existants
+ * en mémoire — la DB fait le travail.
+ *
+ * Retourne le nombre de lignes réellement insérées (les ignorées ne comptent pas).
+ */
+async function upsertProspects(orgs: SnapshotRow[]): Promise<number> {
+  let inserted = 0;
+
+  const rows = orgs.map((org) => ({
+    source: "selion_1_nda",
+    organization_name: org.organization_name,
+    siret: org.siret || null,
+    nda_number: org.nda_number || null,
+    city: org.city || null,
+    status: "new",
+    is_visible: true,
+    enrichment_status: "pending",
+  }));
+
+  for (let i = 0; i < rows.length; i += PROSPECT_BATCH_SIZE) {
+    const batch = rows.slice(i, i + PROSPECT_BATCH_SIZE);
+
+    const { data, error } = await supabase
+      .from("prospects")
+      .upsert(batch, {
+        onConflict: "nda_number",
+        ignoreDuplicates: true,
+      })
+      .select("id");
+
+    if (error) throw new Error(`upsertProspects: ${error.message}`);
+
+    // data contient uniquement les lignes réellement insérées (pas les ignorées)
+    inserted += data?.length ?? 0;
+
+    console.log(
+      `Prospects traités : ${Math.min(i + batch.length, rows.length)} / ${rows.length} (insérés : ${inserted})`,
+    );
+  }
+
+  return inserted;
+}
+
+// ─── Purge anciens snapshots ──────────────────────────────────────────────────
+
+/**
+ * Conserve uniquement les 2 derniers snapshots distincts (aujourd'hui + veille).
+ *
+ * On détermine la seuil dynamiquement plutôt que "today - N jours"
+ * pour ne pas purger accidentellement si le robot a sauté des jours.
+ */
+async function purgeOldSnapshots(today: string): Promise<void> {
+  const { data, error } = await supabase
+    .from("nda_snapshots")
+    .select("snapshot_date")
+    .lte("snapshot_date", today)
+    .order("snapshot_date", { ascending: false });
+
+  if (error) {
+    console.error(
+      "purgeOldSnapshots: impossible de lire les dates :",
+      error.message,
+    );
+    return;
+  }
+
+  if (!data || data.length === 0) return;
+
+  const distinctDates = [
+    ...new Set(data.map((row) => row.snapshot_date).filter(Boolean)),
+  ];
+
+  if (distinctDates.length < 2) {
+    return;
+  }
+
+  const oldestKept = distinctDates[1];
+
+  const { error: deleteError } = await supabase
+    .from("nda_snapshots")
+    .delete()
+    .lt("snapshot_date", oldestKept);
+
+  if (deleteError) {
+    console.error(
+      "purgeOldSnapshots: erreur suppression :",
+      deleteError.message,
+    );
+  } else {
+    console.log(`Anciens snapshots purgés (antérieurs à ${oldestKept})`);
+  }
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("radar-nda.ts démarrage");
 
   const today = getTodayParis();
 
-  const runInsert = await supabase
+  // Créer le run d'import
+  const { data: runData, error: runError } = await supabase
     .from("nda_import_runs")
     .insert({
       import_date: today,
@@ -221,15 +358,15 @@ async function main() {
     .select("id")
     .single();
 
-  if (runInsert.error || !runInsert.data) {
-    throw new Error(
-      runInsert.error?.message || "Impossible de créer le run d'import",
-    );
+  if (runError || !runData) {
+    throw new Error(runError?.message ?? "Impossible de créer le run d'import");
   }
 
-  const runId = runInsert.data.id;
+  const runId = runData.id;
 
   try {
+    // ── 1. Télécharger et parser le CSV ───────────────────────────────────────
+
     const csvText = await fetchCsvWithTimeout(NDA_CSV_URL);
 
     console.log("4. Parsing CSV...");
@@ -248,33 +385,26 @@ async function main() {
       .filter((row) => isValidOrganization(row));
 
     console.log("6. Lignes exploitables =", extracted.length);
-    console.log("7. Exemple ligne =", extracted[0]);
+    if (extracted.length > 0) {
+      console.log("7. Exemple ligne =", extracted[0]);
+    }
 
-    const uniqueMap = new Map<
-      string,
-      {
-        snapshot_date: string;
-        siret: string | null;
-        nda_number: string | null;
-        organization_name: string;
-        city: string | null;
-        comparison_key: string;
-        raw_json: unknown;
-      }
-    >();
+    // ── 2. Déduplication mémoire intra-CSV (par comparison_key) ──────────────
+    // Nécessaire pour éviter les conflits intra-batch avant l'upsert DB.
+
+    const uniqueMap = new Map<string, SnapshotRow>();
 
     for (const row of extracted) {
       const comparisonKey = buildComparisonKey(row);
-
       if (!uniqueMap.has(comparisonKey)) {
         uniqueMap.set(comparisonKey, {
           snapshot_date: today,
           siret: row.siret || null,
+          nda_number: row.nda_number || null,
           organization_name: row.organization_name,
           city: row.city || null,
           comparison_key: comparisonKey,
           raw_json: row,
-          nda_number: row.nda_number || null,
         });
       }
     }
@@ -282,38 +412,29 @@ async function main() {
     const snapshotRows = Array.from(uniqueMap.values());
     console.log("8. Lignes uniques à snapshotter =", snapshotRows.length);
 
+    // ── 3. Upsert snapshot du jour ────────────────────────────────────────────
+    // Idempotent grâce à la contrainte UNIQUE(snapshot_date, comparison_key).
+
     if (snapshotRows.length > 0) {
-      for (let i = 0; i < snapshotRows.length; i += SNAPSHOT_BATCH_SIZE) {
-        const batch = snapshotRows.slice(i, i + SNAPSHOT_BATCH_SIZE);
-
-        const insertSnapshot = await supabase
-          .from("nda_snapshots")
-          .upsert(batch, {
-            onConflict: "snapshot_date,comparison_key",
-            ignoreDuplicates: true,
-          });
-
-        if (insertSnapshot.error) {
-          throw new Error(insertSnapshot.error.message);
-        }
-
-        console.log(
-          `Snapshots insérés : ${Math.min(i + batch.length, snapshotRows.length)} / ${snapshotRows.length}`,
-        );
-      }
+      await upsertSnapshots(snapshotRows);
     }
 
-    const historyFrom = getPastParisDate(today, HISTORY_DAYS);
+    // ── 4. Trouver le snapshot de référence ───────────────────────────────────
+    //
+    // CORRECTIF PRINCIPAL : on cherche le dernier snapshot réellement présent
+    // en base, pas "today - 3 jours".
+    // → Élimine les faux positifs lors des gaps (week-end, panne, etc.)
+
+    const referenceDate = await fetchLastSnapshotDate(today);
     console.log(
-      `9. Recherche historique depuis ${historyFrom} jusqu’à ${today}`,
+      "9. Date de référence =",
+      referenceDate ?? "aucune (bootstrap)",
     );
 
-    const historyRows = await fetchHistoryRows(historyFrom, today);
-    console.log("10. Lignes snapshot historique =", historyRows.length);
-
-    if (historyRows.length === 0) {
+    if (!referenceDate) {
+      // Premier run : aucun historique disponible, aucun prospect créé.
       console.log(
-        "11. Aucun historique récent : initialisation uniquement, aucun prospect créé.",
+        "10. Mode bootstrap : initialisation uniquement, aucun prospect créé.",
       );
 
       await supabase
@@ -328,7 +449,7 @@ async function main() {
       await supabase.from("robot_logs").insert({
         run_type: "nda_import",
         level: "info",
-        message: `Initialisation NDA terminée : ${extracted.length} lignes snapshotées, aucun prospect créé.`,
+        message: `Initialisation NDA : ${extracted.length} lignes snapshotées, aucun prospect créé.`,
         details: {
           import_date: today,
           total: extracted.length,
@@ -336,137 +457,43 @@ async function main() {
         },
       });
 
+      await purgeOldSnapshots(today);
       console.log("Import bootstrap OK.");
       return;
     }
 
-    const historyComparisonKeys = new Set(
-      historyRows
-        .map((row) => row.comparison_key)
-        .filter((value): value is string => Boolean(value)),
+    // ── 5. Charger les comparison_key du snapshot de référence ────────────────
+
+    console.log(`10. Chargement des clés du snapshot ${referenceDate}...`);
+    const referenceKeys = await fetchReferenceKeys(referenceDate);
+    console.log("11. Clés de référence =", referenceKeys.size);
+
+    // ── 6. Détecter les nouveaux OF ───────────────────────────────────────────
+    // Un OF est "nouveau" si sa comparison_key est absente du snapshot de référence.
+    // La comparison_key encode déjà la hiérarchie NDA > SIRET > ORG+CITY,
+    // donc une seule comparaison suffit.
+
+    const newOrganizations = snapshotRows.filter(
+      (row) => !referenceKeys.has(row.comparison_key),
     );
 
-    const historySiretKeys = new Set(
-      historyRows
-        .map((row) => onlyDigits(row.siret ?? ""))
-        .filter(Boolean)
-        .map((siret) => `SIRET:${siret}`),
-    );
+    console.log("12. Nouveaux OF détectés =", newOrganizations.length);
 
-    const historyNameKeys = new Set(
-      historyRows
-        .map((row) => row.organization_name ?? "")
-        .filter(Boolean)
-        .map((name) => buildNameKey(name)),
-    );
-
-    console.log(
-      "12. Clés historique comparaison =",
-      historyComparisonKeys.size,
-    );
-    console.log("13. Clés historique SIRET =", historySiretKeys.size);
-    console.log("14. Clés historique NOM =", historyNameKeys.size);
-
-    const newOrganizations = snapshotRows.filter((row) => {
-      const comparisonKey = row.comparison_key;
-      const siretKey = row.siret ? `SIRET:${row.siret}` : "";
-      const nameKey = buildNameKey(row.organization_name);
-
-      const alreadySeenByComparison = historyComparisonKeys.has(comparisonKey);
-      const alreadySeenBySiret = siretKey
-        ? historySiretKeys.has(siretKey)
-        : false;
-      const alreadySeenByName = historyNameKeys.has(nameKey);
-
-      return (
-        !alreadySeenByComparison && !alreadySeenBySiret && !alreadySeenByName
-      );
-    });
-
-    console.log("15. Nouveaux OF potentiels =", newOrganizations.length);
-
-    const ndaNumbers = newOrganizations
-      .map((org) => org.nda_number)
-      .filter(Boolean);
-
-    let existingNdaSet = new Set<string>();
-
-    if (ndaNumbers.length > 0) {
-      const { data: existingByNda, error: existingByNdaError } = await supabase
-        .from("prospects")
-        .select("nda_number")
-        .in("nda_number", ndaNumbers);
-
-      if (existingByNdaError) {
-        throw new Error(existingByNdaError.message);
-      }
-
-      existingNdaSet = new Set(
-        (existingByNda ?? [])
-          .map((row) => row.nda_number)
-          .filter((value): value is string => Boolean(value)),
-      );
-    }
+    // ── 7. Insérer les prospects (upsert safe sur nda_number) ─────────────────
 
     let rowsNew = 0;
-    const prospectsToInsert: Array<{
-      source: string;
-      organization_name: string;
-      siret: string | null;
-      nda_number: string | null;
-      city: string | null;
-      status: string;
-      is_visible: boolean;
-    }> = [];
 
-    for (let i = 0; i < newOrganizations.length; i++) {
-      const org = newOrganizations[i];
-
-      if (i % 100 === 0) {
-        console.log(`Traitement ligne ${i} / ${newOrganizations.length}`);
-      }
-
-      if (org.nda_number && existingNdaSet.has(org.nda_number)) {
-        continue;
-      }
-
-      prospectsToInsert.push({
-        source: "selion_1_nda",
-        organization_name: org.organization_name,
-        siret: org.siret || null,
-        nda_number: org.nda_number || null,
-        city: org.city || null,
-        status: "new",
-        is_visible: true,
-      });
-
-      rowsNew += 1;
+    if (newOrganizations.length > 0) {
+      rowsNew = await upsertProspects(newOrganizations);
     }
 
-    console.log("16. Prospects à insérer =", prospectsToInsert.length);
+    console.log("13. Prospects réellement insérés =", rowsNew);
 
-    if (prospectsToInsert.length > 0) {
-      for (let i = 0; i < prospectsToInsert.length; i += PROSPECT_BATCH_SIZE) {
-        const batch = prospectsToInsert.slice(i, i + PROSPECT_BATCH_SIZE);
+    // ── 8. Purger les anciens snapshots ───────────────────────────────────────
 
-        const insertProspect = await supabase.from("prospects").insert(batch);
+    await purgeOldSnapshots(today);
 
-        if (insertProspect.error) {
-          throw new Error(insertProspect.error.message);
-        }
-
-        console.log(
-          `Prospects insérés : ${Math.min(i + batch.length, prospectsToInsert.length)} / ${prospectsToInsert.length}`,
-        );
-      }
-    }
-
-    const purgeBefore = getPastParisDate(today, 7);
-
-    await supabase
-      .from("nda_snapshots")
-      .delete()
-      .lt("snapshot_date", purgeBefore);
+    // ── 9. Finaliser le run ───────────────────────────────────────────────────
 
     await supabase
       .from("nda_import_runs")
@@ -483,20 +510,22 @@ async function main() {
       message: `Import NDA terminé : ${extracted.length} lignes, ${rowsNew} nouveaux prospects.`,
       details: {
         import_date: today,
+        reference_date: referenceDate,
         total: extracted.length,
-        new_rows: rowsNew,
+        detected_new: newOrganizations.length,
+        inserted_new: rowsNew,
       },
     });
 
-    console.log(`Import OK — total: ${extracted.length}, nouveaux: ${rowsNew}`);
+    console.log(
+      `Import OK — total: ${extracted.length}, détectés: ${newOrganizations.length}, insérés: ${rowsNew}`,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
     await supabase
       .from("nda_import_runs")
-      .update({
-        status: "error",
-      })
+      .update({ status: "error" })
       .eq("id", runId);
 
     await supabase.from("robot_logs").insert({

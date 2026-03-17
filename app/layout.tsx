@@ -9,14 +9,15 @@ const cinzel = Cinzel({
 
 const inter = Inter({
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
   variable: "--font-inter",
 });
 
 export const metadata = {
-  title: "Sélion",
-  icons: {
-    icon: "/favicon.ico",
-  },
+  title: "Sélion — Studio Agent",
+  description:
+    "Agent intelligent Selen pour la gestion des prospects formation.",
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({
@@ -26,7 +27,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" className={`${cinzel.variable} ${inter.variable}`}>
-      <body suppressHydrationWarning className="font-sans bg-[#1a1410]">
+      <body
+        suppressHydrationWarning
+        className="font-sans bg-[var(--bg-base)] text-[var(--text-primary)]"
+      >
         {children}
       </body>
     </html>

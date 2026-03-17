@@ -39,44 +39,124 @@ export default async function ProspectPage({ params }: ProspectPageProps) {
     .order("remind_at", { ascending: true });
 
   return (
-    <div className="relative min-h-screen bg-[#120d09]">
-      {/* Background grid */}
-      <div
-        className="pointer-events-none fixed inset-0 opacity-[0.025]"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(251,191,36,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(251,191,36,0.6) 1px, transparent 1px)",
-          backgroundSize: "60px 60px",
-        }}
-      />
-      <div className="pointer-events-none fixed left-1/4 top-0 h-[300px] w-[500px] rounded-full bg-amber-700/4 blur-[100px]" />
+    <div className="app-shell">
+      {/* ── Sidebar ──────────────────────────────────────────────────────── */}
+      <aside className="sidebar">
+        <div className="mb-6">
+          <p className="sidebar-brand-label">Selen Studio</p>
+          <h1 className="sidebar-title">Agent</h1>
+          <p className="sidebar-subtitle">Pipeline NDA · Robot 1</p>
+        </div>
 
-      {/* Breadcrumb */}
-      <div className="relative border-b border-amber-900/15 bg-[#120d09]/80 px-6 py-3 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 text-xs text-amber-500/50">
-          <Link href="/" className="hover:text-amber-400 transition-colors">
+        <div className="sidebar-divider" />
+
+        <div className="mb-4">
+          <p className="sidebar-nav-label">Navigation</p>
+          <Link href="/" className="sidebar-nav-item">
+            <span className="text-xs opacity-60">⊞</span> Dashboard
+          </Link>
+          <Link href="/prospects" className="sidebar-nav-item active">
+            <span className="text-xs opacity-60">☰</span> Prospects
+          </Link>
+          <Link href="/conclusions-appels" className="sidebar-nav-item">
+            <span className="text-xs opacity-60">📋</span> Conclusions d'appels
+          </Link>
+        </div>
+
+        <div className="sidebar-divider" />
+
+        {/* Fil d'Ariane dans la sidebar */}
+        <div style={{ marginTop: "0.5rem" }}>
+          <p className="sidebar-nav-label">Fiche ouverte</p>
+          <div
+            className="rounded-lg px-3 py-2"
+            style={{
+              background: "var(--bg-active)",
+              border: "1px solid var(--border-subtle)",
+            }}
+          >
+            <p
+              className="font-cinzel font-semibold truncate"
+              style={{ fontSize: "0.82rem", color: "var(--text-primary)" }}
+            >
+              {prospect.organization_name ?? "Sans nom"}
+            </p>
+            {prospect.city && (
+              <p
+                style={{
+                  fontSize: "0.72rem",
+                  color: "var(--text-muted)",
+                  marginTop: "0.1rem",
+                }}
+              >
+                {prospect.city}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: "auto",
+            fontSize: "0.65rem",
+            color: "var(--text-faint)",
+            paddingTop: "1rem",
+          }}
+        >
+          Version V0 · Studio Selen
+        </div>
+      </aside>
+
+      {/* ── Contenu principal ─────────────────────────────────────────────── */}
+      <main className="main-content">
+        {/* Breadcrumb */}
+        <nav
+          className="mb-6 flex items-center gap-2 animate-fade-in-up"
+          style={{ fontSize: "0.78rem" }}
+        >
+          <Link
+            href="/"
+            className="transition-colors hover:underline"
+            style={{ color: "var(--text-muted)" }}
+          >
             Dashboard
           </Link>
-          <span>/</span>
+          <span style={{ color: "var(--text-faint)" }}>/</span>
           <Link
             href="/prospects"
-            className="hover:text-amber-400 transition-colors"
+            className="transition-colors hover:underline"
+            style={{ color: "var(--text-muted)" }}
           >
             Prospects
           </Link>
-          <span>/</span>
-          <span className="text-amber-300/60">
+          <span style={{ color: "var(--text-faint)" }}>/</span>
+          <span style={{ color: "var(--text-secondary)" }}>
             {prospect.organization_name ?? id}
           </span>
-        </div>
-      </div>
+        </nav>
 
-      <ProspectDetailClient
-        prospect={prospect}
-        messages={messages ?? []}
-        meetings={meetings ?? []}
-        reminders={reminders ?? []}
-      />
+        {/* Header fiche */}
+        <header
+          className="mb-8 animate-fade-in-up"
+          style={{ animationDelay: "40ms" }}
+        >
+          <p className="page-eyebrow">Fiche prospect</p>
+          <h2 className="page-title">
+            {prospect.organization_name ?? "Sans nom"}
+          </h2>
+          {prospect.city && <p className="page-subtitle">{prospect.city}</p>}
+        </header>
+
+        {/* Composant client (inchangé) */}
+        <div className="animate-fade-in-up" style={{ animationDelay: "80ms" }}>
+          <ProspectDetailClient
+            prospect={prospect}
+            messages={messages ?? []}
+            meetings={meetings ?? []}
+            reminders={reminders ?? []}
+          />
+        </div>
+      </main>
     </div>
   );
 }

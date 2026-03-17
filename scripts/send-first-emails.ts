@@ -4,25 +4,43 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
 
+// ─── Env ──────────────────────────────────────────────────────────────────────
+
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} manquant`);
+  return value;
+}
+
 const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
+
+const supabase = createClient(
+  getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+  getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
+);
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+/**
+ * Nombre maximum d'emails envoyés par run.
+ * On ne filtre plus par date de création — cette limite journalière
+ * est le seul régulateur de débit.
+ */
 const DAILY_SEND_LIMIT = 20;
-const MIN_DELAY_MS = 2000;
-const MAX_EXTRA_DELAY_MS = 3000;
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const MIN_DELAY_MS = 2_000;
+const MAX_EXTRA_DELAY_MS = 3_000;
 
-if (!supabaseUrl) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_URL manquant");
-}
+/**
+ * Un prospect resté à "sending" depuis plus de SENDING_TIMEOUT_MS est
+ * considéré comme un crash (le process a été tué entre markSending et
+ * l'écriture du statut "sent"). On le repasse à "failed" pour retry.
+ */
+const SENDING_TIMEOUT_MS = 15 * 60 * 1_000; // 15 minutes
 
-if (!serviceRoleKey) {
-  throw new Error("SUPABASE_SERVICE_ROLE_KEY manquant");
-}
+// ─── Utilitaires ─────────────────────────────────────────────────────────────
 
-const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-function sleep(ms: number) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -43,6 +61,8 @@ function extractDomainFromWebsite(website: string | null | undefined): string {
     return "";
   }
 }
+
+// ─── Validation email ─────────────────────────────────────────────────────────
 
 function isSuspiciousEmail(
   email: string,
@@ -90,12 +110,13 @@ function isSuspiciousEmail(
       domain.endsWith(`.${referenceWebsiteDomain}`) ||
       referenceWebsiteDomain.endsWith(`.${domain}`);
 
-    const obviouslyGenericOrOffTarget =
+    const isGenericProvider =
       /(gmail\.com|yahoo\.com|hotmail\.com|outlook\.com|icloud\.com|live\.fr|live\.com)$/i.test(
         domain,
-      ) === false;
+      );
 
-    if (!sameDomain && !obviouslyGenericOrOffTarget) {
+    // Email sur un domaine tiers non-générique et différent du site → suspect
+    if (!sameDomain && !isGenericProvider) {
       return {
         suspicious: true,
         reason: `domaine incohérent avec le site (${domain} vs ${referenceWebsiteDomain})`,
@@ -106,20 +127,90 @@ function isSuspiciousEmail(
   return { suspicious: false };
 }
 
+// ─── Cleanup des "sending" orphelins ─────────────────────────────────────────
+
+/**
+ * Repasse à "failed" les prospects coincés en statut "sending" depuis
+ * plus de SENDING_TIMEOUT_MS.
+ *
+ * Cas couvert : process tué entre le markSending et l'écriture du "sent".
+ * Sans ce cleanup, ces prospects resteraient bloqués indéfiniment car ils
+ * ne correspondent plus aux filtres de sélection (null / not_sent / failed).
+ */
+async function cleanupStaleSending(): Promise<void> {
+  const cutoff = new Date(Date.now() - SENDING_TIMEOUT_MS).toISOString();
+
+  const { data, error } = await supabase
+    .from("prospects")
+    .update({ first_email_status: "failed" })
+    .eq("source", "selion_1_nda")
+    .eq("first_email_status", "sending")
+    .lt("updated_at", cutoff)
+    .select("id, organization_name");
+
+  if (error) {
+    console.error("cleanupStaleSending erreur :", error.message);
+    return;
+  }
+
+  if (data && data.length > 0) {
+    console.log(
+      `Cleanup sending orphelins : ${data.length} prospect(s) repassés à "failed"`,
+      data.map((p) => p.organization_name ?? p.id),
+    );
+  }
+}
+
+// ─── Claim prospect (test-and-set) ───────────────────────────────────────────
+
+/**
+ * Réserve atomiquement un prospect pour cet envoi en passant son statut
+ * à "sending". La condition sur les statuts éligibles est un test-and-set :
+ * si un autre run a déjà pris ce prospect, la mise à jour touche 0 lignes
+ * et on retourne false → on saute ce prospect.
+ *
+ * Garantit qu'un même email n'est jamais envoyé deux fois en parallèle.
+ */
+async function claimForSending(prospectId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("prospects")
+    .update({ first_email_status: "sending" })
+    .eq("id", prospectId)
+    .or(
+      "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
+    )
+    .select("id");
+
+  if (error) {
+    console.error(`claimForSending erreur pour ${prospectId}:`, error.message);
+    return false;
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
 
-  const todayParis = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  // ── 1. Cleanup des "sending" orphelins ────────────────────────────────────
+  await cleanupStaleSending();
+
+  // ── 2. Récupération des prospects éligibles ───────────────────────────────
+  //
+  // CORRECTIF PRINCIPAL : suppression du filtre .gte("created_at", today).
+  // Ce qui pilote l'éligibilité c'est uniquement l'état du prospect,
+  // pas sa date de création. Cela permet de traiter le backlog (prospects
+  // enrichis hier soir, après un run raté, etc.).
+  //
+  // On inclut "failed" dans les statuts récupérables pour le retry,
+  // et on ne filtre plus sur "sending" (géré par le cleanup ci-dessus).
 
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select(
-      "id, organization_name, email, email_found, website, website_found, first_email_status, workflow_status, prospect_type, created_at, auto_send_allowed, needs_human_validation, manual_review_needed, last_contact_at, source",
+      "id, organization_name, email, email_found, website, website_found, first_email_status, workflow_status, prospect_type, created_at, enriched_at, auto_send_allowed, needs_human_validation, manual_review_needed, last_contact_at, source, enrichment_status",
     )
     .eq("is_visible", true)
     .eq("source", "selion_1_nda")
@@ -127,31 +218,29 @@ async function main() {
     .eq("auto_send_allowed", true)
     .eq("needs_human_validation", false)
     .eq("manual_review_needed", false)
+    .eq("enrichment_status", "enriched")
     .is("last_contact_at", null)
-    .gte("created_at", `${todayParis}T00:00:00+01:00`)
     .or(
       "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
     )
-    .order("created_at", { ascending: false })
+    .order("enriched_at", { ascending: true, nullsFirst: false })
     .limit(DAILY_SEND_LIMIT);
 
   if (error) {
     throw new Error(error.message);
   }
 
+  // ── 3. Filtrage email valide + non-suspect ────────────────────────────────
+
   const candidates = (prospects ?? []).filter((p) => {
     const email = p.email_found || p.email;
     if (!email) return false;
 
-    const suspiciousCheck = isSuspiciousEmail(
-      email,
-      p.website_found,
-      p.website,
-    );
+    const check = isSuspiciousEmail(email, p.website_found, p.website);
 
-    if (suspiciousCheck.suspicious) {
+    if (check.suspicious) {
       console.log(
-        `Email exclu pour ${p.organization_name || "Prospect"} <${email}> | raison: ${suspiciousCheck.reason}`,
+        `Email exclu → ${p.organization_name || "Prospect"} <${email}> | raison: ${check.reason}`,
       );
       return false;
     }
@@ -162,45 +251,48 @@ async function main() {
   console.log(`Prospects récupérés : ${(prospects ?? []).length}`);
   console.log(`Prospects à contacter : ${candidates.length}`);
 
+  // ── 4. Envoi ──────────────────────────────────────────────────────────────
+
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+
   for (const prospect of candidates) {
     const email = prospect.email_found || prospect.email;
     if (!email) continue;
 
+    const label = prospect.organization_name || "Prospect";
+
     try {
-      console.log(
-        `Préparation envoi à ${prospect.organization_name || "Prospect"} <${email}>`,
-      );
+      console.log(`Préparation envoi → ${label} <${email}>`);
 
       if (!EMAIL_SENDING_ENABLED) {
-        console.log(
-          `EMAIL BLOQUÉ (mode test) → ${prospect.organization_name || "Prospect"} <${email}>`,
-        );
+        // Mode dry-run : on ne touche pas à la DB, on simule juste le log
+        console.log(`EMAIL BLOQUÉ (mode test) → ${label} <${email}>`);
+        skipped++;
         continue;
       }
 
-      const { error: markSendingError } = await supabase
-        .from("prospects")
-        .update({
-          first_email_status: "sending",
-        })
-        .eq("id", prospect.id)
-        .or(
-          "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
-        );
-
-      if (markSendingError) {
-        throw new Error(markSendingError.message);
+      // ── Test-and-set : réserver ce prospect pour cet envoi ────────────────
+      // Si retourne false → un autre run l'a déjà pris → on saute
+      const claimed = await claimForSending(prospect.id);
+      if (!claimed) {
+        console.log(`Skipped (déjà en cours d'envoi) → ${label}`);
+        skipped++;
+        continue;
       }
 
+      // ── Envoi effectif ────────────────────────────────────────────────────
       await sendProspectQuestionnaireEmail({
         to: email,
         organizationName: prospect.organization_name,
         prospectId: prospect.id,
       });
 
+      // ── Mise à jour statut post-envoi ─────────────────────────────────────
       const now = new Date().toISOString();
       const followupDate = new Date(
-        Date.now() + 7 * 24 * 60 * 60 * 1000,
+        Date.now() + 7 * 24 * 60 * 60 * 1_000,
       ).toISOString();
 
       const { error: updateError } = await supabase
@@ -218,9 +310,15 @@ async function main() {
         .eq("id", prospect.id);
 
       if (updateError) {
-        throw new Error(updateError.message);
+        // L'email est parti mais la DB n'a pas été mise à jour.
+        // On log l'erreur mais on ne lève pas d'exception pour ne pas
+        // masquer l'envoi réussi dans les stats.
+        console.error(
+          `Erreur mise à jour post-envoi pour ${label}: ${updateError.message}`,
+        );
       }
 
+      // ── Log dans prospect_messages ────────────────────────────────────────
       const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospect.id}`;
 
       const { error: logError } = await supabase
@@ -239,25 +337,32 @@ async function main() {
         });
 
       if (logError) {
-        console.error("Erreur log message :", logError.message);
+        console.error("Erreur log prospect_messages :", logError.message);
       }
 
+      sent++;
+      console.log(`Envoyé ✓ → ${label} <${email}>`);
+
+      // ── Délai anti-spam entre envois ──────────────────────────────────────
       const delay = getRandomDelay();
-      console.log(`Pause avant prochain envoi : ${delay} ms`);
+      console.log(`Pause : ${delay} ms`);
       await sleep(delay);
     } catch (err) {
-      console.error(`Erreur envoi ${email}:`, err);
+      failed++;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Erreur envoi ${email}: ${message}`);
 
+      // Repasse à "failed" pour retry au prochain run
       await supabase
         .from("prospects")
-        .update({
-          first_email_status: "failed",
-        })
+        .update({ first_email_status: "failed" })
         .eq("id", prospect.id);
     }
   }
 
-  console.log("Envoi des premiers emails — terminé");
+  console.log(
+    `Envoi des premiers emails — terminé | envoyés: ${sent}, skipped: ${skipped}, erreurs: ${failed}`,
+  );
 }
 
 main().catch((error) => {

@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import ProspectSpellbook from "./ProspectSpellbook";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type Prospect = {
   id: string;
   organization_name: string | null;
@@ -79,6 +81,8 @@ type OrderOfferKey =
   | "selen_news"
   | "selen_studio";
 
+// ─── Offres ───────────────────────────────────────────────────────────────────
+
 const ORDER_OFFERS: Record<
   OrderOfferKey,
   { label: string; price: string; shortDescription: string }
@@ -112,25 +116,25 @@ const ORDER_OFFERS: Record<
   },
 };
 
+const SALE_OUTCOMES = new Set([
+  "won_audit_blanc",
+  "won_preparation_qualiopi",
+  "won_preparation_nda",
+  "won_gestion_quotidienne",
+]);
+
+// ─── Helpers offres ───────────────────────────────────────────────────────────
+
 function getOfferKeyFromRecommendedOffer(
   value: string | null | undefined,
 ): OrderOfferKey {
-  const normalized = (value || "").toLowerCase();
-
-  if (normalized.includes("daily")) return "selen_daily";
-  if (normalized.includes("news")) return "selen_news";
-  if (normalized.includes("studio")) return "selen_studio";
-  if (normalized.includes("review") || normalized.includes("audit blanc")) {
-    return "selen_review";
-  }
-  if (
-    normalized.includes("prepa") ||
-    normalized.includes("prépa") ||
-    normalized.includes("qualiopi")
-  ) {
+  const n = (value || "").toLowerCase();
+  if (n.includes("daily")) return "selen_daily";
+  if (n.includes("news")) return "selen_news";
+  if (n.includes("studio")) return "selen_studio";
+  if (n.includes("review") || n.includes("audit blanc")) return "selen_review";
+  if (n.includes("prepa") || n.includes("prépa") || n.includes("qualiopi"))
     return "selen_prepa";
-  }
-
   return "selen_review";
 }
 
@@ -158,7 +162,6 @@ function buildOrderMessage(params: {
   amount?: string;
 }) {
   const offer = ORDER_OFFERS[params.offerKey];
-
   return `Bonjour,
 
 Suite à notre échange, voici votre bon de commande pour ${offer.label}.
@@ -172,178 +175,151 @@ ${params.amount || offer.price}
 Lien de paiement ${params.paymentProvider === "paypal" ? "PayPal" : "Stripe"} :
 ${params.paymentLink || "[à compléter]"}
 
-N’hésitez pas à revenir vers nous si vous avez la moindre question.
+N'hésitez pas à revenir vers nous si vous avez la moindre question.
 
 Bien cordialement,
 Romaric`;
 }
 
-const SALE_OUTCOMES = new Set([
-  "won_audit_blanc",
-  "won_preparation_qualiopi",
-  "won_preparation_nda",
-  "won_gestion_quotidienne",
-]);
+// ─── Helpers labels ───────────────────────────────────────────────────────────
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString("fr-FR");
 }
 
 function parseTallyResponses(
   data: any,
 ): { question: string; answer: string }[] {
   if (!data?.data?.fields) return [];
-
-  const fields = data.data.fields;
-
-  return fields
+  return data.data.fields
     .filter((f: any) => f.type !== "HIDDEN_FIELDS")
     .map((field: any) => {
       let answer = field.value;
-
       if (Array.isArray(answer) && field.options) {
         answer = answer
-          .map((id: string) => {
-            const option = field.options.find((o: any) => o.id === id);
-            return option?.text || id;
-          })
+          .map(
+            (id: string) =>
+              field.options.find((o: any) => o.id === id)?.text || id,
+          )
           .join(", ");
       }
-
-      if (Array.isArray(answer)) {
-        answer = answer.join(", ");
-      }
-
-      return {
-        question: field.label,
-        answer: answer || "—",
-      };
+      if (Array.isArray(answer)) answer = answer.join(", ");
+      return { question: field.label, answer: answer || "—" };
     });
 }
 
-function cardTitle(title: string) {
+function getWorkflowLabel(v: string | null) {
+  const map: Record<string, string> = {
+    new: "Nouveau",
+    questionnaire_sent: "Questionnaire envoyé",
+    waiting_reply: "En attente réponse",
+    followup_sent: "Relance envoyée",
+    questionnaire_completed: "Questionnaire rempli",
+    offer_sent: "Offre envoyée",
+    meeting_booked: "RDV pris",
+    closed_no_reply: "Clos sans réponse",
+    closed_won: "Clos gagné",
+    closed_lost: "Clos perdu",
+  };
+  return map[v ?? ""] || v || "—";
+}
+
+function getProspectTypeLabel(v: string | null) {
+  const map: Record<string, string> = {
+    nouvel_entrant: "Nouvel entrant",
+    qp_ok: "QP OK",
+    no_nda: "No NDA",
+  };
+  return map[v ?? ""] || v || "—";
+}
+
+function getQualiopiLabel(v: string | null) {
+  const map: Record<string, string> = {
+    unknown: "Qualiopi inconnu",
+    certified: "Certifié",
+    not_certified: "Non certifié",
+  };
+  return map[v ?? ""] || v || "—";
+}
+
+function getChannelLabel(v: string | null) {
+  const map: Record<string, string> = {
+    email: "Email",
+    facebook: "Facebook",
+    whatsapp: "WhatsApp",
+    linkedin: "LinkedIn",
+    phone: "Téléphone",
+    none: "Aucun",
+  };
+  return map[v ?? ""] || v || "—";
+}
+
+function getCallOutcomeLabel(v: string | null) {
+  const map: Record<string, string> = {
+    won_audit_blanc: "Vente Selen Review",
+    won_preparation_qualiopi: "Vente Selen Prepa",
+    won_preparation_nda: "Vente Selen Prepa",
+    won_gestion_quotidienne: "Vente Selen Daily",
+    needs_followup_call: "Nécessite un nouvel appel",
+    not_interested: "Pas intéressé",
+    no_answer: "Injoignable / sans retour",
+    other: "Autre",
+  };
+  return map[v ?? ""] || v || "—";
+}
+
+// ─── Classes UI harmonisées Studio ───────────────────────────────────────────
+
+function input() {
   return (
-    <h2 className="mb-4 text-base font-semibold uppercase tracking-wide text-amber-100">
-      {title}
-    </h2>
+    "w-full rounded-lg border px-3 py-2 text-sm outline-none transition focus:ring-0" +
+    " bg-[var(--bg-input)] border-[var(--border-subtle)] text-[var(--text-primary)]" +
+    " placeholder:text-[var(--text-faint)] focus:border-[var(--border-accent)]"
   );
 }
 
-function inputClass() {
-  return "w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-2 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50";
+function textarea(minH = "min-h-[100px]") {
+  return (
+    `${minH} w-full rounded-lg border px-3 py-3 text-sm outline-none transition resize-none` +
+    " bg-[var(--bg-input)] border-[var(--border-subtle)] text-[var(--text-primary)]" +
+    " placeholder:text-[var(--text-faint)] focus:border-[var(--border-accent)]"
+  );
 }
 
-function panelClass() {
-  return "rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg";
+function panel() {
+  return "card p-5";
 }
 
-function miniCardClass() {
-  return "rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80";
+function miniCard() {
+  return (
+    "rounded-lg border px-3 py-2 text-sm" +
+    " bg-[var(--bg-input)] border-[var(--border-subtle)] text-[var(--text-secondary)]"
+  );
 }
 
-function actionButtonClass(variant: "primary" | "secondary" = "secondary") {
-  if (variant === "primary") {
-    return "rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-amber-600 transition";
-  }
-
-  return "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2.5 text-sm text-amber-100 hover:bg-[#3a2c24] transition";
+function btnPrimary() {
+  return "btn-primary disabled:opacity-40 disabled:cursor-not-allowed";
 }
 
-function getWorkflowLabel(value: string | null) {
-  switch (value) {
-    case "new":
-      return "Nouveau";
-    case "questionnaire_sent":
-      return "Questionnaire envoyé";
-    case "waiting_reply":
-      return "En attente réponse";
-    case "followup_sent":
-      return "Relance envoyée";
-    case "questionnaire_completed":
-      return "Questionnaire rempli";
-    case "offer_sent":
-      return "Offre envoyée";
-    case "meeting_booked":
-      return "RDV pris";
-    case "closed_no_reply":
-      return "Clos sans réponse";
-    case "closed_won":
-      return "Clos gagné";
-    case "closed_lost":
-      return "Clos perdu";
-    default:
-      return value || "—";
-  }
+function btnSecondary() {
+  return "btn-secondary disabled:opacity-40 disabled:cursor-not-allowed";
 }
 
-function getProspectTypeLabel(value: string | null) {
-  switch (value) {
-    case "nouvel_entrant":
-      return "Nouvel entrant";
-    case "qp_ok":
-      return "QP OK";
-    case "no_nda":
-      return "No NDA";
-    default:
-      return value || "—";
-  }
+function sectionTitle(t: string) {
+  return <h2 className="mb-4 section-title">{t}</h2>;
 }
 
-function getQualiopiLabel(value: string | null) {
-  switch (value) {
-    case "unknown":
-      return "Qualiopi inconnu";
-    case "certified":
-      return "Certifié";
-    case "not_certified":
-      return "Non certifié";
-    default:
-      return value || "—";
-  }
+function tabCls(active: boolean) {
+  return active
+    ? "px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition" +
+        " bg-[var(--bg-active)] border border-[var(--border-accent)] text-[var(--gold-bright)]"
+    : "px-4 py-2 rounded-lg text-sm cursor-pointer transition" +
+        " bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-muted)]" +
+        " hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]";
 }
 
-function getChannelLabel(value: string | null) {
-  switch (value) {
-    case "email":
-      return "Email";
-    case "facebook":
-      return "Facebook";
-    case "whatsapp":
-      return "WhatsApp";
-    case "linkedin":
-      return "LinkedIn";
-    case "phone":
-      return "Téléphone";
-    case "none":
-      return "Aucun";
-    default:
-      return value || "—";
-  }
-}
-
-function getCallOutcomeLabel(value: string | null) {
-  switch (value) {
-    case "won_audit_blanc":
-      return "Vente Selen Review";
-    case "won_preparation_qualiopi":
-      return "Vente Selen Prepa";
-    case "won_preparation_nda":
-      return "Vente Selen Prepa";
-    case "won_gestion_quotidienne":
-      return "Vente Selen Daily";
-    case "needs_followup_call":
-      return "Nécessite un nouvel appel";
-    case "not_interested":
-      return "Pas intéressé";
-    case "no_answer":
-      return "Injoignable / sans retour";
-    case "other":
-      return "Autre";
-    default:
-      return value || "—";
-  }
-}
+// ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function ProspectDetailClient({
   prospect,
@@ -376,7 +352,6 @@ export default function ProspectDetailClient({
   });
 
   const [newNote, setNewNote] = useState("");
-
   const [callOutcome, setCallOutcome] = useState(
     firstMeeting?.call_outcome ?? "",
   );
@@ -394,7 +369,6 @@ export default function ProspectDetailClient({
   );
   const [followupTitle, setFollowupTitle] = useState("Rappeler ce prospect");
   const [followupNote, setFollowupNote] = useState("");
-
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
 
@@ -447,7 +421,6 @@ export default function ProspectDetailClient({
     const suggestedOffer = isSaleOutcome
       ? getOfferKeyFromCallOutcome(callOutcome)
       : getOfferKeyFromRecommendedOffer(prospect.recommended_offer_primary);
-
     setOrderOffer(suggestedOffer);
   }, [callOutcome, isSaleOutcome, prospect.recommended_offer_primary]);
 
@@ -474,10 +447,11 @@ export default function ProspectDetailClient({
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
+  // ── Actions ───────────────────────────────────────────────────────────────
+
   async function saveProspect() {
     setSaving(true);
     setFeedback("");
-
     const { error } = await supabase
       .from("prospects")
       .update({
@@ -497,23 +471,19 @@ export default function ProspectDetailClient({
         updated_by_human_at: new Date().toISOString(),
       })
       .eq("id", prospect.id);
-
     if (error) {
       setFeedback(`Erreur sauvegarde : ${error.message}`);
       setSaving(false);
       return;
     }
-
     setFeedback("Fiche prospect mise à jour.");
     setSaving(false);
   }
 
   async function addInternalNote() {
     if (!newNote.trim()) return;
-
     setSaving(true);
     setFeedback("");
-
     const { error } = await supabase.from("prospect_messages").insert({
       prospect_id: prospect.id,
       channel: "internal",
@@ -525,13 +495,11 @@ export default function ProspectDetailClient({
       human_validated: true,
       validation_required: false,
     });
-
     if (error) {
       setFeedback(`Erreur note : ${error.message}`);
       setSaving(false);
       return;
     }
-
     setFeedback("Note ajoutée. Recharge la page pour la voir.");
     setNewNote("");
     setSaving(false);
@@ -540,18 +508,14 @@ export default function ProspectDetailClient({
   async function saveCallConclusion() {
     setSaving(true);
     setFeedback("");
-
     if (isSaleOutcome && !saleAmount.trim()) {
       setFeedback("Merci de renseigner le montant de la vente.");
       setSaving(false);
       return;
     }
-
     const computedSaleStatus = isSaleOutcome ? "won" : null;
     const computedSaleAmount = isSaleOutcome ? Number(saleAmount) || 0 : null;
-
     let meetingId = firstMeeting?.id ?? null;
-
     if (!meetingId) {
       const { data, error } = await supabase
         .from("meetings")
@@ -567,13 +531,11 @@ export default function ProspectDetailClient({
         })
         .select("id")
         .single();
-
       if (error) {
         setFeedback(`Erreur conclusion appel : ${error.message}`);
         setSaving(false);
         return;
       }
-
       meetingId = data.id;
     } else {
       const { error } = await supabase
@@ -587,14 +549,12 @@ export default function ProspectDetailClient({
           sale_amount: computedSaleAmount,
         })
         .eq("id", meetingId);
-
       if (error) {
         setFeedback(`Erreur conclusion appel : ${error.message}`);
         setSaving(false);
         return;
       }
     }
-
     if (followupNeeded && followupDate) {
       const { error: reminderError } = await supabase
         .from("prospect_reminders")
@@ -605,7 +565,6 @@ export default function ProspectDetailClient({
           remind_at: followupDate,
           status: "pending",
         });
-
       if (reminderError) {
         setFeedback(
           `Conclusion enregistrée, mais rappel non créé : ${reminderError.message}`,
@@ -614,18 +573,14 @@ export default function ProspectDetailClient({
         return;
       }
     }
-
-    setFeedback("Conclusion d’appel enregistrée.");
+    setFeedback("Conclusion d'appel enregistrée.");
     setSaving(false);
   }
 
   async function saveOrderDraft() {
     setSaving(true);
     setFeedback("");
-
     const selectedOffer = ORDER_OFFERS[orderOffer];
-    const subject = `Bon de commande - ${selectedOffer.label}`;
-
     const { error: messageError } = await supabase
       .from("prospect_messages")
       .insert({
@@ -633,22 +588,18 @@ export default function ProspectDetailClient({
         channel: "email",
         direction: "draft",
         message_type: "order_form",
-        subject,
-        body: `Destinataire : ${orderRecipientEmail || "—"}
-
-${orderMessage}`,
+        subject: `Bon de commande - ${selectedOffer.label}`,
+        body: `Destinataire : ${orderRecipientEmail || "—"}\n\n${orderMessage}`,
         delivery_status: "draft",
         auto_generated: false,
         human_validated: true,
         validation_required: false,
       });
-
     if (messageError) {
       setFeedback(`Erreur bon de commande : ${messageError.message}`);
       setSaving(false);
       return;
     }
-
     const { error: prospectError } = await supabase
       .from("prospects")
       .update({
@@ -656,7 +607,6 @@ ${orderMessage}`,
         updated_by_human_at: new Date().toISOString(),
       })
       .eq("id", prospect.id);
-
     if (prospectError) {
       setFeedback(
         `Brouillon créé, mais statut non mis à jour : ${prospectError.message}`,
@@ -664,11 +614,8 @@ ${orderMessage}`,
       setSaving(false);
       return;
     }
-
     setForm((prev) => ({ ...prev, workflow_status: "offer_sent" }));
-    setFeedback(
-      `Bon de commande préparé pour ${selectedOffer.label}. Un brouillon a été ajouté à l’historique.`,
-    );
+    setFeedback(`Bon de commande préparé pour ${selectedOffer.label}.`);
     setShowOrderPanel(false);
     setSaving(false);
   }
@@ -676,13 +623,10 @@ ${orderMessage}`,
   async function generateStripePaymentLink() {
     setSaving(true);
     setFeedback("");
-
     try {
       const response = await fetch("/api/create-stripe-payment-link", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           offerLabel: ORDER_OFFERS[orderOffer].label,
           amount: orderAmount,
@@ -690,9 +634,7 @@ ${orderMessage}`,
           organizationName: prospect.organization_name ?? "",
         }),
       });
-
       const result = await response.json();
-
       if (!response.ok) {
         setFeedback(
           result.error || "Erreur lors de la génération du lien Stripe.",
@@ -700,15 +642,12 @@ ${orderMessage}`,
         setSaving(false);
         return;
       }
-
       setOrderPaymentProvider("stripe");
       setOrderPaymentLink(result.url);
       setFeedback("Lien Stripe généré.");
       setSaving(false);
     } catch (error: any) {
-      setFeedback(
-        error?.message || "Erreur lors de la génération du lien Stripe.",
-      );
+      setFeedback(error?.message || "Erreur Stripe.");
       setSaving(false);
     }
   }
@@ -716,46 +655,37 @@ ${orderMessage}`,
   async function sendOrderEmail() {
     setSaving(true);
     setFeedback("");
-
-    const selectedOffer = ORDER_OFFERS[orderOffer];
-    const subject = `Bon de commande - ${selectedOffer.label}`;
-
     if (!orderRecipientEmail.trim()) {
-      setFeedback("Merci de renseigner l’email du destinataire.");
+      setFeedback("Merci de renseigner l'email du destinataire.");
       setSaving(false);
       return;
     }
-
     if (!orderMessage.trim()) {
       setFeedback("Le message du bon de commande est vide.");
       setSaving(false);
       return;
     }
-
     const response = await fetch("/api/send-order", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prospectId: prospect.id,
         recipientEmail: orderRecipientEmail.trim(),
-        subject,
+        subject: `Bon de commande - ${ORDER_OFFERS[orderOffer].label}`,
         message: orderMessage,
         workflowStatus: "offer_sent",
       }),
     });
-
     const result = await response.json();
-
     if (!response.ok) {
-      setFeedback(result.error || "Erreur lors de l’envoi du bon de commande.");
+      setFeedback(result.error || "Erreur lors de l'envoi du bon de commande.");
       setSaving(false);
       return;
     }
-
     setForm((prev) => ({ ...prev, workflow_status: "offer_sent" }));
-    setFeedback(`Bon de commande envoyé pour ${selectedOffer.label}.`);
+    setFeedback(
+      `Bon de commande envoyé pour ${ORDER_OFFERS[orderOffer].label}.`,
+    );
     setShowOrderPanel(false);
     setSaving(false);
   }
@@ -763,30 +693,24 @@ ${orderMessage}`,
   async function sendQuickEmail() {
     setSaving(true);
     setFeedback("");
-
     if (!quickEmailRecipient.trim()) {
-      setFeedback("Merci de renseigner l’email du destinataire.");
+      setFeedback("Merci de renseigner l'email du destinataire.");
       setSaving(false);
       return;
     }
-
     if (!quickEmailSubject.trim()) {
-      setFeedback("Merci de renseigner l’objet du mail.");
+      setFeedback("Merci de renseigner l'objet du mail.");
       setSaving(false);
       return;
     }
-
     if (!quickEmailBody.trim()) {
       setFeedback("Le message du mail est vide.");
       setSaving(false);
       return;
     }
-
     const response = await fetch("/api/send-prospect-email", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prospectId: prospect.id,
         recipientEmail: quickEmailRecipient.trim(),
@@ -794,15 +718,12 @@ ${orderMessage}`,
         message: quickEmailBody.trim(),
       }),
     });
-
     const result = await response.json();
-
     if (!response.ok) {
-      setFeedback(result.error || "Erreur lors de l’envoi du mail.");
+      setFeedback(result.error || "Erreur lors de l'envoi du mail.");
       setSaving(false);
       return;
     }
-
     setFeedback(`Mail envoyé à ${quickEmailRecipient.trim()}.`);
     setShowQuickEmail(false);
     setQuickEmailSubject("");
@@ -815,6 +736,8 @@ ${orderMessage}`,
     setSaving(false);
   }
 
+  // ── Badges de statut en-tête ──────────────────────────────────────────────
+
   const topBadges = [
     { label: "Statut", value: getWorkflowLabel(form.workflow_status) },
     { label: "Type", value: getProspectTypeLabel(form.prospect_type) },
@@ -825,63 +748,63 @@ ${orderMessage}`,
     },
   ];
 
+  // ── Rendu ─────────────────────────────────────────────────────────────────
+
   return (
-    <main className="min-h-screen bg-[#1a1410] p-6 text-amber-50">
-      <div className="mb-4 flex gap-3">
-        <Link
-          href="/"
-          className="inline-block rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-        >
-          ← Dashboard
-        </Link>
-
-        <Link
-          href="/prospects"
-          className="inline-block rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-        >
-          ← Liste prospects
-        </Link>
-      </div>
-
-      <section className="mb-4 rounded-2xl border border-amber-900/40 bg-[#241b15] p-5 shadow-lg">
+    <div style={{ color: "var(--text-primary)" }}>
+      {/* ── Bandeau fiche ─────────────────────────────────────────────────── */}
+      <section className="card p-5 mb-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          {/* Infos */}
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-amber-100">
+            <h1
+              className="font-cinzel text-xl font-bold"
+              style={{ color: "var(--text-primary)" }}
+            >
               {form.organization_name || "Prospect"}
             </h1>
-
             <div className="mt-2 flex flex-wrap gap-2">
-              {topBadges.map((badge) => (
-                <span
-                  key={badge.label}
-                  className="rounded-full border border-amber-700/30 bg-[#2b211b] px-3 py-1 text-xs text-amber-200/85"
-                >
-                  <strong className="text-amber-100">{badge.label} :</strong>{" "}
-                  {badge.value}
+              {topBadges.map((b) => (
+                <span key={b.label} className="badge badge-muted">
+                  <strong style={{ color: "var(--text-secondary)" }}>
+                    {b.label} :
+                  </strong>{" "}
+                  {b.value}
                 </span>
               ))}
             </div>
-
-            <div className="mt-3 grid gap-2 text-sm text-amber-200/75 md:grid-cols-2">
+            <div
+              className="mt-3 grid gap-1.5 text-sm md:grid-cols-2"
+              style={{ color: "var(--text-muted)" }}
+            >
               <p>
-                <strong className="text-amber-100">Email :</strong>{" "}
+                <strong style={{ color: "var(--text-secondary)" }}>
+                  Email :
+                </strong>{" "}
                 {form.email_found || "—"}
               </p>
               <p>
-                <strong className="text-amber-100">Site :</strong>{" "}
+                <strong style={{ color: "var(--text-secondary)" }}>
+                  Site :
+                </strong>{" "}
                 {form.website_found || "—"}
               </p>
               <p>
-                <strong className="text-amber-100">Qualiopi :</strong>{" "}
+                <strong style={{ color: "var(--text-secondary)" }}>
+                  Qualiopi :
+                </strong>{" "}
                 {getQualiopiLabel(form.qualiopi_status)}
               </p>
               <p>
-                <strong className="text-amber-100">Créé le :</strong>{" "}
+                <strong style={{ color: "var(--text-secondary)" }}>
+                  Créé le :
+                </strong>{" "}
                 {formatDate(prospect.created_at)}
               </p>
             </div>
           </div>
 
+          {/* Actions */}
           <div className="flex flex-wrap gap-2 xl:justify-end">
             <button
               type="button"
@@ -889,24 +812,22 @@ ${orderMessage}`,
                 setQuickEmailRecipient(
                   prospect.email_found ?? prospect.email ?? "",
                 );
-                setShowQuickEmail((prev) => !prev);
+                setShowQuickEmail((p) => !p);
               }}
-              className={actionButtonClass()}
+              className={btnSecondary()}
             >
               ✉️ Envoyer un mail
             </button>
-
             <button
               type="button"
               onClick={() => {
-                const suggestedOffer = isSaleOutcome
+                const k = isSaleOutcome
                   ? getOfferKeyFromCallOutcome(callOutcome)
                   : getOfferKeyFromRecommendedOffer(
                       prospect.recommended_offer_primary,
                     );
-
-                setOrderOffer(suggestedOffer);
-                setOrderAmount(ORDER_OFFERS[suggestedOffer].price);
+                setOrderOffer(k);
+                setOrderAmount(ORDER_OFFERS[k].price);
                 setOrderRecipientEmail(
                   prospect.email_found ?? prospect.email ?? "",
                 );
@@ -916,84 +837,88 @@ ${orderMessage}`,
                   buildOrderMessage({
                     organizationName:
                       prospect.organization_name ?? "votre organisme",
-                    offerKey: suggestedOffer,
+                    offerKey: k,
                     paymentProvider: "stripe",
                     paymentLink: "",
-                    amount: ORDER_OFFERS[suggestedOffer].price,
+                    amount: ORDER_OFFERS[k].price,
                   }),
                 );
-                setShowOrderPanel((prev) => !prev);
+                setShowOrderPanel((p) => !p);
               }}
-              className={actionButtonClass()}
+              className={btnSecondary()}
             >
               📄 Bon de commande
             </button>
-
             <button
               type="button"
-              onClick={() => setShowSpellbook((prev) => !prev)}
-              className={actionButtonClass()}
+              onClick={() => setShowSpellbook((p) => !p)}
+              className={btnSecondary()}
             >
               📖 Grimoire
             </button>
-
             <button
               onClick={saveProspect}
               disabled={saving}
-              className={actionButtonClass("primary")}
+              className={btnPrimary()}
             >
               Enregistrer la fiche
             </button>
           </div>
         </div>
 
+        {/* Feedback */}
         {feedback && (
-          <div className="mt-4 rounded-xl border border-amber-700/30 bg-[#2b211b] p-3 text-sm text-amber-200">
+          <div
+            className="mt-4 rounded-lg border px-3 py-2.5 text-sm"
+            style={{
+              background: "var(--bg-input)",
+              borderColor: "var(--border-mid)",
+              color: "var(--text-secondary)",
+            }}
+          >
             {feedback}
           </div>
         )}
 
+        {/* Panel mail rapide */}
         {showQuickEmail && (
-          <div className="mt-4 rounded-2xl border border-amber-700/25 bg-[#201812] p-4">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-100">
-              Envoi rapide d’un mail
-            </h3>
-
+          <div
+            className="mt-4 rounded-xl border p-4"
+            style={{
+              background: "var(--bg-surface)",
+              borderColor: "var(--border-subtle)",
+            }}
+          >
+            <h3 className="mb-3 section-title">Envoi rapide d'un mail</h3>
             <div className="grid gap-3 md:grid-cols-[1fr_auto]">
               <input
-                className={inputClass()}
+                className={input()}
                 value={quickEmailRecipient}
                 onChange={(e) => setQuickEmailRecipient(e.target.value)}
                 placeholder="Adresse email du prospect"
               />
-              <Link
-                href="/mailbox"
-                className="rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2.5 text-sm text-amber-100 hover:bg-[#3a2c24] text-center"
-              >
+              <Link href="/mailbox" className={btnSecondary()}>
                 Ouvrir la boîte mail
               </Link>
             </div>
-
             <input
-              className={`${inputClass()} mt-3`}
+              className={`${input()} mt-3`}
               value={quickEmailSubject}
               onChange={(e) => setQuickEmailSubject(e.target.value)}
               placeholder="Objet"
             />
-
             <textarea
-              className="mt-3 min-h-[120px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+              className={`${textarea("min-h-[120px]")} mt-3`}
               value={quickEmailBody}
               onChange={(e) => setQuickEmailBody(e.target.value)}
               placeholder="Message rapide..."
             />
-
             <div className="mt-3 flex justify-end">
               <button
                 type="button"
                 onClick={sendQuickEmail}
                 disabled={saving}
-                className={actionButtonClass("primary")}
+                className={btnPrimary()}
               >
                 Envoyer
               </button>
@@ -1001,22 +926,25 @@ ${orderMessage}`,
           </div>
         )}
 
+        {/* Panel bon de commande */}
         {showOrderPanel && (
-          <div className="mt-4 rounded-2xl border border-amber-700/25 bg-[#201812] p-4">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-100">
-              Bon de commande
-            </h3>
-
+          <div
+            className="mt-4 rounded-xl border p-4"
+            style={{
+              background: "var(--bg-surface)",
+              borderColor: "var(--border-subtle)",
+            }}
+          >
+            <h3 className="mb-3 section-title">Bon de commande</h3>
             <div className="grid gap-3 md:grid-cols-2">
               <input
-                className={inputClass()}
+                className={input()}
                 value={orderRecipientEmail}
                 onChange={(e) => setOrderRecipientEmail(e.target.value)}
                 placeholder="Email du prospect"
               />
-
               <select
-                className={inputClass()}
+                className={input()}
                 value={orderOffer}
                 onChange={(e) => setOrderOffer(e.target.value as OrderOfferKey)}
               >
@@ -1026,65 +954,62 @@ ${orderMessage}`,
                 <option value="selen_news">Selen News</option>
                 <option value="selen_studio">Selen Studio</option>
               </select>
-
               <input
-                className={inputClass()}
+                className={input()}
                 value={orderAmount}
                 onChange={(e) => setOrderAmount(e.target.value)}
                 placeholder="Montant / tarif affiché"
               />
-
-              <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-                <strong>Mode de paiement :</strong> Stripe
+              <div className={miniCard()}>
+                <strong style={{ color: "var(--text-secondary)" }}>
+                  Mode de paiement :
+                </strong>{" "}
+                Stripe
               </div>
-
-              <div className="md:col-span-2">
-                <div className="flex flex-col gap-2 md:flex-row">
-                  <input
-                    className={inputClass()}
-                    value={orderPaymentLink}
-                    onChange={(e) => setOrderPaymentLink(e.target.value)}
-                    placeholder="Lien de paiement Stripe"
-                  />
-                  <button
-                    type="button"
-                    onClick={generateStripePaymentLink}
-                    disabled={saving}
-                    className={actionButtonClass()}
-                  >
-                    Générer lien Stripe
-                  </button>
-                </div>
+              <div className="md:col-span-2 flex flex-col gap-2 md:flex-row">
+                <input
+                  className={input()}
+                  value={orderPaymentLink}
+                  onChange={(e) => setOrderPaymentLink(e.target.value)}
+                  placeholder="Lien de paiement Stripe"
+                />
+                <button
+                  type="button"
+                  onClick={generateStripePaymentLink}
+                  disabled={saving}
+                  className={btnSecondary()}
+                >
+                  Générer lien Stripe
+                </button>
               </div>
             </div>
-
-            <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] px-3 py-2 text-sm text-amber-200/80">
-              <strong>Prestation :</strong> {ORDER_OFFERS[orderOffer].label} —{" "}
+            <div className={`mt-3 ${miniCard()}`}>
+              <strong style={{ color: "var(--text-secondary)" }}>
+                Prestation :
+              </strong>{" "}
+              {ORDER_OFFERS[orderOffer].label} —{" "}
               {ORDER_OFFERS[orderOffer].shortDescription}
             </div>
-
             <textarea
-              className="mt-3 min-h-[180px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+              className={`${textarea("min-h-[180px]")} mt-3`}
               value={orderMessage}
               onChange={(e) => setOrderMessage(e.target.value)}
-              placeholder="Message d’accompagnement du bon de commande..."
+              placeholder="Message d'accompagnement..."
             />
-
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={saveOrderDraft}
                 disabled={saving}
-                className={actionButtonClass()}
+                className={btnSecondary()}
               >
                 Générer le brouillon
               </button>
-
               <button
                 type="button"
                 onClick={sendOrderEmail}
                 disabled={saving}
-                className={actionButtonClass("primary")}
+                className={btnPrimary()}
               >
                 Envoyer le bon de commande
               </button>
@@ -1093,58 +1018,48 @@ ${orderMessage}`,
         )}
       </section>
 
+      {/* ── Grille principale ─────────────────────────────────────────────── */}
       <section className="grid items-start gap-4 xl:grid-cols-[1.1fr_0.72fr]">
+        {/* Colonne gauche */}
         <div className="relative min-w-0">
           {showSpellbook && (
             <ProspectSpellbook onClose={() => setShowSpellbook(false)} />
           )}
-          <div className={panelClass()}>
-            <div className="mb-4 flex flex-wrap gap-2">
+
+          <div className={panel()}>
+            {/* Tabs */}
+            <div className="mb-5 flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setActiveTab("overview")}
-                className={
-                  activeTab === "overview"
-                    ? "rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow"
-                    : "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-                }
+                className={tabCls(activeTab === "overview")}
               >
-                Vue d’ensemble
+                Vue d'ensemble
               </button>
-
               <button
                 type="button"
                 onClick={() => setActiveTab("questionnaire")}
-                className={
-                  activeTab === "questionnaire"
-                    ? "rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow"
-                    : "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-                }
+                className={tabCls(activeTab === "questionnaire")}
               >
                 Questionnaire
               </button>
-
               <button
                 type="button"
                 onClick={() => setActiveTab("history")}
-                className={
-                  activeTab === "history"
-                    ? "rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow"
-                    : "rounded-xl border border-amber-700/30 bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-                }
+                className={tabCls(activeTab === "history")}
               >
                 Historique
               </button>
             </div>
 
+            {/* Tab — Vue d'ensemble */}
             {activeTab === "overview" && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <section>
-                  {cardTitle("Informations prospect")}
-
+                  {sectionTitle("Informations prospect")}
                   <div className="grid gap-3 md:grid-cols-2">
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.organization_name}
                       onChange={(e) =>
                         updateField("organization_name", e.target.value)
@@ -1152,7 +1067,7 @@ ${orderMessage}`,
                       placeholder="Nom organisme"
                     />
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.email_found}
                       onChange={(e) =>
                         updateField("email_found", e.target.value)
@@ -1160,7 +1075,7 @@ ${orderMessage}`,
                       placeholder="Email"
                     />
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.website_found}
                       onChange={(e) =>
                         updateField("website_found", e.target.value)
@@ -1168,13 +1083,13 @@ ${orderMessage}`,
                       placeholder="Site web"
                     />
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.naf_code}
                       onChange={(e) => updateField("naf_code", e.target.value)}
                       placeholder="Code NAF"
                     />
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.training_domain}
                       onChange={(e) =>
                         updateField("training_domain", e.target.value)
@@ -1182,7 +1097,7 @@ ${orderMessage}`,
                       placeholder="Domaine de formation"
                     />
                     <select
-                      className={inputClass()}
+                      className={input()}
                       value={form.prospect_type}
                       onChange={(e) =>
                         updateField("prospect_type", e.target.value)
@@ -1193,7 +1108,7 @@ ${orderMessage}`,
                       <option value="no_nda">No NDA</option>
                     </select>
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.linkedin_url}
                       onChange={(e) =>
                         updateField("linkedin_url", e.target.value)
@@ -1201,7 +1116,7 @@ ${orderMessage}`,
                       placeholder="LinkedIn"
                     />
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.facebook_url}
                       onChange={(e) =>
                         updateField("facebook_url", e.target.value)
@@ -1209,7 +1124,7 @@ ${orderMessage}`,
                       placeholder="Facebook"
                     />
                     <input
-                      className={inputClass()}
+                      className={input()}
                       value={form.whatsapp_url}
                       onChange={(e) =>
                         updateField("whatsapp_url", e.target.value)
@@ -1217,7 +1132,7 @@ ${orderMessage}`,
                       placeholder="WhatsApp"
                     />
                     <select
-                      className={inputClass()}
+                      className={input()}
                       value={form.qualiopi_status}
                       onChange={(e) =>
                         updateField("qualiopi_status", e.target.value)
@@ -1228,7 +1143,7 @@ ${orderMessage}`,
                       <option value="not_certified">Non certifié</option>
                     </select>
                     <select
-                      className={inputClass()}
+                      className={input()}
                       value={form.workflow_status}
                       onChange={(e) =>
                         updateField("workflow_status", e.target.value)
@@ -1250,7 +1165,7 @@ ${orderMessage}`,
                       <option value="closed_lost">Clos perdu</option>
                     </select>
                     <select
-                      className={inputClass()}
+                      className={input()}
                       value={form.preferred_contact_channel}
                       onChange={(e) =>
                         updateField("preferred_contact_channel", e.target.value)
@@ -1264,27 +1179,28 @@ ${orderMessage}`,
                       <option value="none">Aucun</option>
                     </select>
                   </div>
-
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <div className={miniCardClass()}>
-                      <strong>Premier email :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Premier email :
+                      </strong>{" "}
                       {prospect.first_email_status === "sent"
                         ? "envoyé"
                         : "non envoyé"}
                     </div>
-
-                    <div className={miniCardClass()}>
-                      <strong>Date envoi :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Date envoi :
+                      </strong>{" "}
                       {prospect.first_outreach_sent_at
                         ? new Date(
                             prospect.first_outreach_sent_at,
-                          ).toLocaleString()
+                          ).toLocaleString("fr-FR")
                         : "—"}
                     </div>
                   </div>
-
                   <textarea
-                    className="mt-3 min-h-[90px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+                    className={`${textarea("min-h-[90px]")} mt-3`}
                     value={form.internal_notes}
                     onChange={(e) =>
                       updateField("internal_notes", e.target.value)
@@ -1294,48 +1210,58 @@ ${orderMessage}`,
                 </section>
 
                 <section>
-                  {cardTitle("Recommandation commerciale")}
-
+                  {sectionTitle("Recommandation commerciale")}
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className={miniCardClass()}>
-                      <strong>Offre principale :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Offre principale :
+                      </strong>{" "}
                       {prospect.recommended_offer_primary || "—"}
                     </div>
-
-                    <div className={miniCardClass()}>
-                      <strong>Offre secondaire :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Offre secondaire :
+                      </strong>{" "}
                       {prospect.recommended_offer_secondary || "—"}
                     </div>
-                  </div>
-
-                  <div className={`mt-3 ${miniCardClass()}`}>
-                    <strong>Angle commercial :</strong>{" "}
-                    {prospect.sales_angle || "—"}
+                    <div className={`${miniCard()} md:col-span-2`}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Angle commercial :
+                      </strong>{" "}
+                      {prospect.sales_angle || "—"}
+                    </div>
                   </div>
                 </section>
 
                 <section>
-                  {cardTitle("Résumé rapide")}
-
+                  {sectionTitle("Résumé rapide")}
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className={miniCardClass()}>
-                      <strong>Questionnaire :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Questionnaire :
+                      </strong>{" "}
                       {prospect.questionnaire_status || "non envoyé"}
                     </div>
-                    <div className={miniCardClass()}>
-                      <strong>Date réponse :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Date réponse :
+                      </strong>{" "}
                       {prospect.questionnaire_completed_at
                         ? new Date(
                             prospect.questionnaire_completed_at,
-                          ).toLocaleString()
+                          ).toLocaleString("fr-FR")
                         : "—"}
                     </div>
-                    <div className={miniCardClass()}>
-                      <strong>Dernière conclusion :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Dernière conclusion :
+                      </strong>{" "}
                       {getCallOutcomeLabel(firstMeeting?.call_outcome ?? null)}
                     </div>
-                    <div className={miniCardClass()}>
-                      <strong>Montant vente :</strong>{" "}
+                    <div className={miniCard()}>
+                      <strong style={{ color: "var(--text-secondary)" }}>
+                        Montant vente :
+                      </strong>{" "}
                       {firstMeeting?.sale_amount != null
                         ? `${firstMeeting.sale_amount} €`
                         : "—"}
@@ -1345,54 +1271,70 @@ ${orderMessage}`,
               </div>
             )}
 
+            {/* Tab — Questionnaire */}
             {activeTab === "questionnaire" && (
               <div>
-                {cardTitle("Questionnaire")}
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className={miniCardClass()}>
-                    <strong>Statut :</strong>{" "}
+                {sectionTitle("Questionnaire")}
+                <div className="grid gap-3 md:grid-cols-2 mb-4">
+                  <div className={miniCard()}>
+                    <strong style={{ color: "var(--text-secondary)" }}>
+                      Statut :
+                    </strong>{" "}
                     {prospect.questionnaire_status || "non envoyé"}
                   </div>
-
-                  <div className={miniCardClass()}>
-                    <strong>Date de réponse :</strong>{" "}
+                  <div className={miniCard()}>
+                    <strong style={{ color: "var(--text-secondary)" }}>
+                      Date de réponse :
+                    </strong>{" "}
                     {prospect.questionnaire_completed_at
                       ? new Date(
                           prospect.questionnaire_completed_at,
-                        ).toLocaleString()
+                        ).toLocaleString("fr-FR")
                       : "—"}
                   </div>
                 </div>
-
-                <div className="mt-3 rounded-xl border border-amber-900/30 bg-[#2b211b] p-3 text-sm text-amber-200/80">
+                <div
+                  className="rounded-xl border p-3 text-sm space-y-2"
+                  style={{
+                    background: "var(--bg-input)",
+                    borderColor: "var(--border-subtle)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
                   {questionnaireItems.length === 0 ? (
                     <p>Aucune réponse enregistrée pour le moment.</p>
                   ) : (
-                    <div className="space-y-2">
-                      {questionnaireItems.map((item, index) => (
-                        <div
-                          key={index}
-                          className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2"
+                    questionnaireItems.map((item, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border px-3 py-2"
+                        style={{
+                          background: "var(--bg-card)",
+                          borderColor: "var(--border-subtle)",
+                        }}
+                      >
+                        <p
+                          className="font-medium"
+                          style={{ color: "var(--text-primary)" }}
                         >
-                          <p className="font-medium text-amber-100">
-                            {item.question}
-                          </p>
-                          <p className="text-amber-200/80">{item.answer}</p>
-                        </div>
-                      ))}
-                    </div>
+                          {item.question}
+                        </p>
+                        <p style={{ color: "var(--text-secondary)" }}>
+                          {item.answer}
+                        </p>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
             )}
 
+            {/* Tab — Historique */}
             {activeTab === "history" && (
               <div>
-                {cardTitle("Historique des communications")}
-
+                {sectionTitle("Historique des communications")}
                 {messages.length === 0 ? (
-                  <p className="text-sm text-amber-200/70">
+                  <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                     Aucune communication enregistrée.
                   </p>
                 ) : (
@@ -1400,33 +1342,45 @@ ${orderMessage}`,
                     {messages.map((msg) => (
                       <div
                         key={msg.id}
-                        className="rounded-xl border border-amber-900/30 bg-[#2b211b] px-4 py-3 text-sm text-amber-200/80"
+                        className="rounded-xl border px-4 py-3 text-sm"
+                        style={{
+                          background: "var(--bg-input)",
+                          borderColor: "var(--border-subtle)",
+                          color: "var(--text-secondary)",
+                        }}
                       >
-                        <div className="mb-2 flex flex-wrap gap-2 text-xs text-amber-300/70">
-                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                            {msg.channel || "—"}
-                          </span>
-                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                            {msg.direction || "—"}
-                          </span>
-                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                            {msg.message_type || "—"}
-                          </span>
-                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                            {msg.delivery_status || "—"}
-                          </span>
-                          <span className="rounded-full bg-[#1f1813] px-2 py-1">
-                            {formatDate(msg.created_at)}
-                          </span>
+                        <div
+                          className="mb-2 flex flex-wrap gap-2 text-xs"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {[
+                            msg.channel,
+                            msg.direction,
+                            msg.message_type,
+                            msg.delivery_status,
+                            formatDate(msg.created_at),
+                          ].map((v, i) => (
+                            <span
+                              key={i}
+                              className="rounded-full px-2 py-0.5"
+                              style={{
+                                background: "var(--bg-card)",
+                                border: "1px solid var(--border-subtle)",
+                              }}
+                            >
+                              {v || "—"}
+                            </span>
+                          ))}
                         </div>
-
                         {msg.subject && (
-                          <p className="font-medium text-amber-100">
+                          <p
+                            className="font-medium mb-1"
+                            style={{ color: "var(--text-primary)" }}
+                          >
                             {msg.subject}
                           </p>
                         )}
-
-                        <p className="mt-1 whitespace-pre-wrap leading-relaxed">
+                        <p className="whitespace-pre-wrap leading-relaxed">
                           {msg.body || "—"}
                         </p>
                       </div>
@@ -1438,14 +1392,15 @@ ${orderMessage}`,
           </div>
         </div>
 
+        {/* Colonne droite */}
         <div className="xl:sticky xl:top-6">
           <div className="space-y-4">
-            <div className={`${panelClass()} h-fit`}>
-              {cardTitle("Conclusion d’appel")}
-
+            {/* Conclusion d'appel */}
+            <div className={panel()}>
+              {sectionTitle("Conclusion d'appel")}
               <div className="grid gap-3">
                 <select
-                  className={inputClass()}
+                  className={input()}
                   value={callOutcome}
                   onChange={(e) => setCallOutcome(e.target.value)}
                 >
@@ -1454,7 +1409,9 @@ ${orderMessage}`,
                   <option value="won_preparation_qualiopi">
                     Vente Selen Prepa
                   </option>
-                  <option value="won_preparation_nda">Vente Selen Prepa</option>
+                  <option value="won_preparation_nda">
+                    Vente Selen Prepa (NDA)
+                  </option>
                   <option value="won_gestion_quotidienne">
                     Vente Selen Daily
                   </option>
@@ -1465,27 +1422,27 @@ ${orderMessage}`,
                   <option value="no_answer">Injoignable / sans retour</option>
                   <option value="other">Autre</option>
                 </select>
-
                 {isSaleOutcome && (
                   <input
                     type="number"
                     min="0"
                     step="1"
-                    className={inputClass()}
+                    className={input()}
                     value={saleAmount}
                     onChange={(e) => setSaleAmount(e.target.value)}
                     placeholder="Montant de la vente (€)"
                   />
                 )}
-
                 <textarea
-                  className="min-h-[110px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+                  className={textarea("min-h-[110px]")}
                   value={callSummary}
                   onChange={(e) => setCallSummary(e.target.value)}
-                  placeholder="Résumé de l’appel"
+                  placeholder="Résumé de l'appel"
                 />
-
-                <label className="flex items-center gap-2 text-sm text-amber-200/80">
+                <label
+                  className="flex items-center gap-2 text-sm cursor-pointer"
+                  style={{ color: "var(--text-secondary)" }}
+                >
                   <input
                     type="checkbox"
                     checked={followupNeeded}
@@ -1493,48 +1450,56 @@ ${orderMessage}`,
                   />
                   Suivi nécessaire
                 </label>
-
                 {followupNeeded && (
-                  <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3">
-                    <div className="grid gap-3">
-                      <input
-                        className={inputClass()}
-                        value={followupTitle}
-                        onChange={(e) => setFollowupTitle(e.target.value)}
-                        placeholder="Titre du rappel"
-                      />
-                      <textarea
-                        className="min-h-[70px] w-full rounded-xl border border-amber-700/30 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
-                        value={followupNote}
-                        onChange={(e) => setFollowupNote(e.target.value)}
-                        placeholder="Détail du rappel"
-                      />
-                      <input
-                        type="datetime-local"
-                        className={inputClass()}
-                        value={followupDate}
-                        onChange={(e) => setFollowupDate(e.target.value)}
-                      />
-                    </div>
+                  <div
+                    className="rounded-xl border p-3 grid gap-3"
+                    style={{
+                      background: "var(--bg-input)",
+                      borderColor: "var(--border-subtle)",
+                    }}
+                  >
+                    <input
+                      className={input()}
+                      value={followupTitle}
+                      onChange={(e) => setFollowupTitle(e.target.value)}
+                      placeholder="Titre du rappel"
+                    />
+                    <textarea
+                      className={textarea("min-h-[70px]")}
+                      value={followupNote}
+                      onChange={(e) => setFollowupNote(e.target.value)}
+                      placeholder="Détail du rappel"
+                    />
+                    <input
+                      type="datetime-local"
+                      className={input()}
+                      value={followupDate}
+                      onChange={(e) => setFollowupDate(e.target.value)}
+                    />
                   </div>
                 )}
-
                 <button
                   onClick={saveCallConclusion}
                   disabled={saving}
-                  className={actionButtonClass("primary")}
+                  className={btnPrimary()}
                 >
-                  Enregistrer la conclusion d’appel
+                  Enregistrer la conclusion d'appel
                 </button>
               </div>
             </div>
 
-            <div className={panelClass()}>
-              {cardTitle("Note rapide / suivi manuel")}
-
-              <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3">
+            {/* Note rapide */}
+            <div className={panel()}>
+              {sectionTitle("Note rapide / suivi manuel")}
+              <div
+                className="rounded-xl border p-3"
+                style={{
+                  background: "var(--bg-input)",
+                  borderColor: "var(--border-subtle)",
+                }}
+              >
                 <textarea
-                  className="min-h-[120px] w-full resize-none rounded-lg border border-amber-700/20 bg-[#1f1813] px-3 py-3 text-sm text-amber-100 placeholder:text-amber-200/40 outline-none transition focus:border-amber-500/50"
+                  className={textarea("min-h-[120px]")}
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
                   placeholder="Ex : réponse au mail auto, question du prospect, échange manuel..."
@@ -1543,7 +1508,7 @@ ${orderMessage}`,
                   <button
                     onClick={addInternalNote}
                     disabled={saving}
-                    className={actionButtonClass("primary")}
+                    className={btnPrimary()}
                   >
                     Ajouter au suivi
                   </button>
@@ -1551,12 +1516,18 @@ ${orderMessage}`,
               </div>
             </div>
 
-            <div className={panelClass()}>
-              {cardTitle("Rappels internes")}
-
-              <div className="rounded-xl border border-amber-900/30 bg-[#2b211b] p-3 min-h-[178px]">
+            {/* Rappels */}
+            <div className={panel()}>
+              {sectionTitle("Rappels internes")}
+              <div
+                className="rounded-xl border p-3 min-h-[160px]"
+                style={{
+                  background: "var(--bg-input)",
+                  borderColor: "var(--border-subtle)",
+                }}
+              >
                 {reminders.length === 0 ? (
-                  <p className="text-sm text-amber-200/70">
+                  <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                     Aucun rappel enregistré.
                   </p>
                 ) : (
@@ -1564,14 +1535,25 @@ ${orderMessage}`,
                     {reminders.map((reminder) => (
                       <div
                         key={reminder.id}
-                        className="rounded-lg border border-amber-900/20 bg-[#1f1813] px-3 py-2 text-sm text-amber-200/80"
+                        className="rounded-lg border px-3 py-2 text-sm"
+                        style={{
+                          background: "var(--bg-card)",
+                          borderColor: "var(--border-subtle)",
+                          color: "var(--text-secondary)",
+                        }}
                       >
-                        <p className="font-medium text-amber-100">
+                        <p
+                          className="font-medium"
+                          style={{ color: "var(--text-primary)" }}
+                        >
                           {reminder.title}
                         </p>
                         <p>{reminder.note || "—"}</p>
-                        <p className="text-xs text-amber-300/70">
-                          {formatDate(reminder.remind_at)} • {reminder.status}
+                        <p
+                          className="text-xs mt-0.5"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {formatDate(reminder.remind_at)} · {reminder.status}
                         </p>
                       </div>
                     ))}
@@ -1582,6 +1564,6 @@ ${orderMessage}`,
           </div>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

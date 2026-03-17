@@ -4,93 +4,243 @@ dotenv.config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectFollowupEmail } from "../src/lib/email";
 
+// ─── Env ──────────────────────────────────────────────────────────────────────
+
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} manquant`);
+  return value;
+}
+
 const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+  getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
 );
 
-function sleep(ms: number) {
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+/** Délai minimum entre deux relances : 7 jours après le dernier envoi questionnaire */
+const FOLLOWUP_DELAY_DAYS = 7;
+
+/** Délai anti-spam entre deux envois (2 à 4 minutes, aléatoire) */
+const MIN_DELAY_MS = 120_000;
+const MAX_EXTRA_DELAY_MS = 120_000;
+
+/**
+ * Un prospect resté à "sending_followup" depuis plus de SENDING_TIMEOUT_MS
+ * est considéré comme un crash → repassé à "failed" pour retry.
+ */
+const SENDING_TIMEOUT_MS = 15 * 60 * 1_000; // 15 minutes
+
+// ─── Utilitaires ─────────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+function getRandomDelay(): number {
+  return MIN_DELAY_MS + Math.floor(Math.random() * MAX_EXTRA_DELAY_MS);
+}
+
+/**
+ * Calcule la date seuil au-delà de laquelle un prospect peut être relancé.
+ * Utilise Date + soustraction en ms — pas de concaténation de chaîne ISO.
+ */
+function getFollowupCutoff(): string {
+  return new Date(
+    Date.now() - FOLLOWUP_DELAY_DAYS * 24 * 60 * 60 * 1_000,
+  ).toISOString();
+}
+
+// ─── Cleanup des "sending_followup" orphelins ─────────────────────────────────
+
+/**
+ * Repasse à "failed" les prospects coincés en statut "sending_followup"
+ * depuis plus de SENDING_TIMEOUT_MS (crash entre claim et confirmation).
+ */
+async function cleanupStaleSendingFollowup(): Promise<void> {
+  const cutoff = new Date(Date.now() - SENDING_TIMEOUT_MS).toISOString();
+
+  const { data, error } = await supabase
+    .from("prospects")
+    .update({ followup_email_status: "failed" })
+    .eq("source", "selion_1_nda")
+    .eq("followup_email_status", "sending_followup")
+    .lt("updated_at", cutoff)
+    .select("id, organization_name");
+
+  if (error) {
+    console.error("cleanupStaleSendingFollowup erreur :", error.message);
+    return;
+  }
+
+  if (data && data.length > 0) {
+    console.log(
+      `Cleanup followup orphelins : ${data.length} prospect(s) repassés à "failed"`,
+      data.map((p) => p.organization_name ?? p.id),
+    );
+  }
+}
+
+// ─── Claim prospect pour relance (test-and-set) ───────────────────────────────
+
+/**
+ * Réserve atomiquement le prospect pour cet envoi de relance.
+ * Si un autre run a déjà pris ce prospect (statut != null/failed),
+ * la mise à jour touche 0 lignes → retourne false → on saute.
+ */
+async function claimForFollowup(prospectId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("prospects")
+    .update({ followup_email_status: "sending_followup" })
+    .eq("id", prospectId)
+    .or(
+      "followup_email_status.is.null,followup_email_status.eq.failed,followup_email_status.eq.not_sent",
+    )
+    .select("id");
+
+  if (error) {
+    console.error(`claimForFollowup erreur pour ${prospectId}:`, error.message);
+    return false;
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("Robot relance prospects — démarrage");
 
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  // ── 1. Cleanup des "sending_followup" orphelins ───────────────────────────
+  await cleanupStaleSendingFollowup();
 
+  // ── 2. Calcul du seuil de 7 jours ────────────────────────────────────────
+  // On utilise Date.now() - N jours en ms, pas new Date().setDate()
+  // ni concaténation de chaîne ISO avec timezone hardcodée.
+  const followupCutoff = getFollowupCutoff();
+  console.log(`Seuil relance (questionnaire envoyé avant) : ${followupCutoff}`);
+
+  // ── 3. Récupération des prospects éligibles ───────────────────────────────
   const { data: prospects, error } = await supabase
     .from("prospects")
-    .select("*")
+    .select(
+      "id, organization_name, email, email_found, questionnaire_status, questionnaire_last_sent_at, followup_email_status, questionnaire_completed_at",
+    )
     .eq("source", "selion_1_nda")
     .eq("is_visible", true)
     .eq("auto_send_allowed", true)
     .eq("needs_human_validation", false)
     .eq("manual_review_needed", false)
     .eq("questionnaire_status", "sent")
-    .neq("followup_email_status", "sent")
     .is("questionnaire_completed_at", null)
-    .lt("questionnaire_last_sent_at", sevenDaysAgo.toISOString());
+    .or(
+      "followup_email_status.is.null,followup_email_status.eq.failed,followup_email_status.eq.not_sent",
+    )
+    .lt("questionnaire_last_sent_at", followupCutoff)
+    .order("questionnaire_last_sent_at", { ascending: true });
 
   if (error) {
-    console.error(error);
+    throw new Error(error.message);
+  }
+
+  const candidates = (prospects ?? []).filter((p) => {
+    const email = p.email_found || p.email;
+    if (!email) {
+      console.log(`Skipped (pas d'email) → ${p.organization_name ?? p.id}`);
+      return false;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) {
+    console.log("Aucun prospect à relancer.");
     return;
   }
 
-  const filteredProspects = prospects ?? [];
+  console.log(`Prospects à relancer : ${candidates.length}`);
 
-  if (!filteredProspects || filteredProspects.length === 0) {
-    console.log("Aucun prospect à relancer");
-    return;
-  }
+  // ── 4. Envoi des relances ─────────────────────────────────────────────────
 
-  console.log(`Prospects récupérés pour relance : ${(prospects ?? []).length}`);
-  console.log(`Prospects à relancer : ${filteredProspects.length}`);
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
 
-  for (const prospect of filteredProspects) {
+  for (const prospect of candidates) {
     const email = prospect.email_found || prospect.email;
-
     if (!email) continue;
 
-    console.log(`Relance → ${prospect.organization_name}`);
-
-    if (!EMAIL_SENDING_ENABLED) {
-      console.log("EMAIL BLOQUÉ (mode test)");
-      continue;
-    }
+    const label = prospect.organization_name ?? prospect.id;
 
     try {
+      console.log(`Relance → ${label} <${email}>`);
+
+      if (!EMAIL_SENDING_ENABLED) {
+        // Dry-run : pas de touche DB, juste le log
+        console.log(`EMAIL BLOQUÉ (mode test) → ${label}`);
+        skipped++;
+        continue;
+      }
+
+      // ── Test-and-set : réserver ce prospect pour cet envoi ────────────────
+      const claimed = await claimForFollowup(prospect.id);
+      if (!claimed) {
+        console.log(`Skipped (déjà en cours d'envoi) → ${label}`);
+        skipped++;
+        continue;
+      }
+
+      // ── Envoi effectif ────────────────────────────────────────────────────
       await sendProspectFollowupEmail({
         to: email,
         organizationName: prospect.organization_name,
         prospectId: prospect.id,
       });
 
-      await supabase
+      // ── Mise à jour statut post-envoi ─────────────────────────────────────
+      const { error: updateError } = await supabase
         .from("prospects")
         .update({
           followup_email_status: "sent",
           followup_sent_at: new Date().toISOString(),
+          last_contact_at: new Date().toISOString(),
         })
         .eq("id", prospect.id);
 
-      const delay = 120000 + Math.floor(Math.random() * 120000);
-      await sleep(delay);
-    } catch (error) {
-      console.error("Erreur relance :", error);
+      if (updateError) {
+        console.error(
+          `Erreur mise à jour post-relance pour ${label}: ${updateError.message}`,
+        );
+      }
 
+      sent++;
+      console.log(`Relance envoyée ✓ → ${label}`);
+
+      // ── Délai anti-spam ───────────────────────────────────────────────────
+      const delay = getRandomDelay();
+      console.log(`Pause : ${delay} ms`);
+      await sleep(delay);
+    } catch (err) {
+      failed++;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Erreur relance ${email}: ${message}`);
+
+      // Repasse à "failed" pour retry au prochain run
       await supabase
         .from("prospects")
-        .update({
-          followup_email_status: "failed",
-        })
+        .update({ followup_email_status: "failed" })
         .eq("id", prospect.id);
     }
   }
 
-  console.log("Robot relance terminé");
+  console.log(
+    `Robot relance terminé | envoyés: ${sent}, skipped: ${skipped}, erreurs: ${failed}`,
+  );
 }
 
-main();
+main().catch((error) => {
+  console.error("Erreur globale relance :", error);
+  process.exit(1);
+});

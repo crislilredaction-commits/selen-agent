@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
-
   return new Intl.DateTimeFormat("fr-FR", {
     dateStyle: "short",
     timeStyle: "short",
@@ -26,7 +27,7 @@ function buildOutcomeLabel(value: string | null) {
     case "not_interested":
       return "Pas intéressé";
     case "no_answer":
-      return "Injoignable / sans retour";
+      return "Injoignable";
     case "other":
       return "Autre";
     default:
@@ -47,16 +48,28 @@ function buildProspectTypeLabel(value: string | null) {
   }
 }
 
-function buildSaleStatusLabel(value: string | null) {
-  switch (value) {
-    case "won":
-      return "Gagnée";
-    case "lost":
-      return "Perdue";
-    default:
-      return "—";
-  }
+function OutcomeBadge({ outcome }: { outcome: string | null }) {
+  const label = buildOutcomeLabel(outcome);
+  const isWon = outcome?.startsWith("won_");
+  const isFollowup = outcome === "needs_followup_call";
+
+  let cls = "badge badge-muted";
+  if (isWon) cls = "badge badge-gold";
+  if (isFollowup) cls = "badge badge-orange";
+
+  return <span className={cls}>{label}</span>;
 }
+
+function SaleBadge({ status }: { status: string | null }) {
+  if (status === "won")
+    return <span className="badge badge-green">Gagnée</span>;
+  if (status === "lost") return <span className="badge badge-red">Perdue</span>;
+  return (
+    <span style={{ color: "var(--text-faint)", fontSize: "0.8rem" }}>—</span>
+  );
+}
+
+// ─── Types & Pagination ───────────────────────────────────────────────────────
 
 type SearchParams = {
   search?: string;
@@ -74,21 +87,21 @@ function buildPageLink(params: {
   page: number;
 }) {
   const query = new URLSearchParams();
-
   if (params.search) query.set("search", params.search);
   if (params.outcome) query.set("outcome", params.outcome);
   if (params.sale) query.set("sale", params.sale);
   query.set("page", String(params.page));
-
   return `/conclusions-appels?${query.toString()}`;
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function ConclusionsAppelsPage({
   searchParams,
 }: {
-  searchParams?: Promise<SearchParams>;
+  searchParams?: SearchParams;
 }) {
-  const resolvedSearchParams = (await searchParams) ?? {};
+  const resolvedSearchParams = searchParams ?? {};
 
   const search = (resolvedSearchParams.search ?? "").trim();
   const selectedOutcome = (resolvedSearchParams.outcome ?? "").trim();
@@ -101,338 +114,373 @@ export default async function ConclusionsAppelsPage({
   let query = supabase
     .from("meetings")
     .select(
-      `
-        id,
-        created_at,
-        meeting_status,
-        sale_status,
-        sale_amount,
-        call_outcome,
-        call_summary,
-        followup_needed,
-        followup_date,
-        prospect:prospects (
-          id,
-          organization_name,
-          email,
-          email_found,
-          prospect_type,
-          workflow_status,
-          is_visible,
-          source
-        )
-      `,
+      `id, created_at, meeting_status, sale_status, sale_amount, call_outcome,
+       call_summary, followup_needed, followup_date,
+       prospect:prospects (
+         id, organization_name, email, email_found,
+         prospect_type, workflow_status, is_visible, source
+       )`,
       { count: "exact" },
     )
     .order("created_at", { ascending: false });
 
-  if (selectedOutcome) {
-    query = query.eq("call_outcome", selectedOutcome);
-  }
-
-  if (selectedSale === "won") {
-    query = query.eq("sale_status", "won");
-  } else if (selectedSale === "lost") {
-    query = query.eq("sale_status", "lost");
-  } else if (selectedSale === "none") {
-    query = query.is("sale_status", null);
-  }
+  if (selectedOutcome) query = query.eq("call_outcome", selectedOutcome);
+  if (selectedSale === "won") query = query.eq("sale_status", "won");
+  else if (selectedSale === "lost") query = query.eq("sale_status", "lost");
+  else if (selectedSale === "none") query = query.is("sale_status", null);
 
   const from = (currentPage - 1) * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
+  const { data, count, error } = await query.range(from, from + PAGE_SIZE - 1);
 
-  const { data, count, error } = await query.range(from, to);
+  const safeRows = (data ?? []).filter((row: any) => {
+    const prospect = Array.isArray(row.prospect)
+      ? row.prospect[0]
+      : row.prospect;
+    if (!prospect) return false;
+    if (prospect.source !== "selion_1_nda") return false;
+    if (prospect.is_visible !== true) return false;
+    if (!search) return true;
+    const text =
+      `${prospect.organization_name ?? ""} ${prospect.email_found ?? ""} ${prospect.email ?? ""}`.toLowerCase();
+    return text.includes(search.toLowerCase());
+  });
 
-  const safeRows =
-    (data ?? []).filter((row: any) => {
-      const prospect = Array.isArray(row.prospect)
-        ? row.prospect[0]
-        : row.prospect;
-      if (!prospect) return false;
-      if (prospect.source !== "selion_1_nda") return false;
-      if (prospect.is_visible !== true) return false;
-
-      if (!search) return true;
-
-      const text =
-        `${prospect.organization_name ?? ""} ${prospect.email_found ?? ""} ${prospect.email ?? ""}`.toLowerCase();
-      return text.includes(search.toLowerCase());
-    }) ?? [];
-
-  const totalResults = count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
-
-  const salesWonCount = safeRows.filter(
-    (row: any) => row.sale_status === "won",
-  ).length;
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const salesWon = safeRows.filter((r: any) => r.sale_status === "won").length;
   const revenue = safeRows
-    .filter((row: any) => row.sale_status === "won")
-    .reduce((sum: number, row: any) => sum + (Number(row.sale_amount) || 0), 0);
+    .filter((r: any) => r.sale_status === "won")
+    .reduce((s: number, r: any) => s + (Number(r.sale_amount) || 0), 0);
 
   return (
-    <main className="min-h-screen bg-[#1a1410] p-8 text-amber-50">
-      <div className="mb-4 flex gap-3">
-        <Link
-          href="/"
-          className="inline-block rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-        >
-          ← Dashboard
-        </Link>
-
-        <Link
-          href="/prospects"
-          className="inline-block rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-        >
-          ← Liste prospects
-        </Link>
-      </div>
-
-      <h1 className="mb-2 text-3xl font-bold text-amber-100">
-        Conclusions d’appel
-      </h1>
-
-      <p className="mb-6 text-sm text-amber-200/70">
-        Vue synthèse des appels et rendez-vous saisis dans les fiches prospects.
-      </p>
-
-      {error ? (
-        <div className="mb-6 rounded-2xl border border-red-900/40 bg-red-950/20 p-4 text-red-200">
-          Erreur Supabase : {error.message}
+    <div className="app-shell">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="mb-6">
+          <p className="sidebar-brand-label">Selen Studio</p>
+          <h1 className="sidebar-title">Agent</h1>
+          <p className="sidebar-subtitle">Pipeline NDA · Robot 1</p>
         </div>
-      ) : null}
-
-      <section className="mb-6 grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-amber-900/40 bg-[#241b15]/85 p-4">
-          <p className="text-sm text-amber-200/70">Conclusions affichées</p>
-          <p className="mt-2 text-3xl font-semibold text-amber-100">
-            {safeRows.length}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-amber-900/40 bg-[#241b15]/85 p-4">
-          <p className="text-sm text-amber-200/70">Ventes gagnées</p>
-          <p className="mt-2 text-3xl font-semibold text-amber-100">
-            {salesWonCount}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-amber-900/40 bg-[#241b15]/85 p-4">
-          <p className="text-sm text-amber-200/70">CA visible</p>
-          <p className="mt-2 text-3xl font-semibold text-amber-100">
-            {revenue.toLocaleString("fr-FR")} €
-          </p>
-        </div>
-      </section>
-
-      <form
-        method="GET"
-        className="mb-6 grid gap-4 rounded-2xl border border-amber-900/40 bg-[#241b15]/85 p-4 md:grid-cols-4"
-      >
-        <div className="md:col-span-2">
-          <label className="mb-2 block text-sm text-amber-200/80">
-            Rechercher
-          </label>
-          <input
-            type="text"
-            name="search"
-            defaultValue={search}
-            placeholder="Nom organisme ou email"
-            className="w-full rounded-xl border border-amber-900/40 bg-[#2b211b] px-4 py-3 text-amber-50 outline-none placeholder:text-amber-200/40"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm text-amber-200/80">
-            Conclusion
-          </label>
-          <select
-            name="outcome"
-            defaultValue={selectedOutcome}
-            className="w-full rounded-xl border border-amber-900/40 bg-[#2b211b] px-4 py-3 text-amber-50 outline-none"
-          >
-            <option value="">Toutes</option>
-            <option value="won_audit_blanc">Vente audit blanc</option>
-            <option value="won_preparation_qualiopi">
-              Vente préparation Qualiopi
-            </option>
-            <option value="won_preparation_nda">Vente préparation NDA</option>
-            <option value="won_gestion_quotidienne">
-              Vente gestion quotidienne
-            </option>
-            <option value="needs_followup_call">À rappeler</option>
-            <option value="not_interested">Pas intéressé</option>
-            <option value="no_answer">Injoignable / sans retour</option>
-            <option value="other">Autre</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm text-amber-200/80">Vente</label>
-          <select
-            name="sale"
-            defaultValue={selectedSale}
-            className="w-full rounded-xl border border-amber-900/40 bg-[#2b211b] px-4 py-3 text-amber-50 outline-none"
-          >
-            <option value="">Toutes</option>
-            <option value="won">Gagnée</option>
-            <option value="lost">Perdue</option>
-            <option value="none">Sans issue de vente</option>
-          </select>
-        </div>
-
-        <input type="hidden" name="page" value="1" />
-
-        <div className="md:col-span-4 flex gap-3">
-          <button
-            type="submit"
-            className="rounded-xl bg-amber-200/80 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
-          >
-            Filtrer
-          </button>
-
-          <Link
-            href="/conclusions-appels"
-            className="rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-          >
-            Réinitialiser
+        <div className="sidebar-divider" />
+        <div className="mb-4">
+          <p className="sidebar-nav-label">Navigation</p>
+          <Link href="/" className="sidebar-nav-item">
+            <span className="text-xs opacity-60">⊞</span> Dashboard
+          </Link>
+          <Link href="/prospects" className="sidebar-nav-item">
+            <span className="text-xs opacity-60">☰</span> Prospects
+          </Link>
+          <Link href="/conclusions-appels" className="sidebar-nav-item active">
+            <span className="text-xs opacity-60">📋</span> Conclusions d'appels
           </Link>
         </div>
-      </form>
-
-      <div className="overflow-hidden rounded-2xl border border-amber-900/40">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-[#2b211b] text-amber-200/80">
-            <tr>
-              <th className="px-4 py-3">Organisme</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Conclusion</th>
-              <th className="px-4 py-3">Résumé</th>
-              <th className="px-4 py-3">Vente</th>
-              <th className="px-4 py-3">Montant</th>
-              <th className="px-4 py-3">Relance</th>
-              <th className="px-4 py-3">Date</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {safeRows.length === 0 ? (
-              <tr className="border-t border-amber-900/30 bg-[#201813]/80">
-                <td
-                  colSpan={9}
-                  className="px-4 py-6 text-center text-amber-200/70"
-                >
-                  Aucune conclusion d’appel ne correspond à ces filtres.
-                </td>
-              </tr>
-            ) : (
-              safeRows.map((row: any) => {
-                const prospect = Array.isArray(row.prospect)
-                  ? row.prospect[0]
-                  : row.prospect;
-
-                return (
-                  <tr
-                    key={row.id}
-                    className="border-t border-amber-900/30 bg-[#201813]/80 align-top hover:bg-[#2b211b]"
-                  >
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/prospects/${prospect.id}`}
-                        className="text-amber-100 underline"
-                      >
-                        {prospect.organization_name ?? "Sans nom"}
-                      </Link>
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      {prospect.email_found || prospect.email || "—"}
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      {buildProspectTypeLabel(prospect.prospect_type)}
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      {buildOutcomeLabel(row.call_outcome)}
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      <div className="max-w-[320px] whitespace-pre-wrap">
-                        {row.call_summary || "—"}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      {buildSaleStatusLabel(row.sale_status)}
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      {row.sale_amount != null
-                        ? `${Number(row.sale_amount).toLocaleString("fr-FR")} €`
-                        : "—"}
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      {row.followup_needed
-                        ? `Oui${row.followup_date ? ` · ${formatDate(row.followup_date)}` : ""}`
-                        : "Non"}
-                    </td>
-
-                    <td className="px-4 py-3 text-amber-200/70">
-                      {formatDate(row.created_at)}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-6 flex items-center justify-between">
-        <p className="text-sm text-amber-200/70">
-          Page {currentPage} sur {totalPages}
-        </p>
-
-        <div className="flex gap-3">
-          {currentPage > 1 ? (
-            <Link
-              href={buildPageLink({
-                search,
-                outcome: selectedOutcome,
-                sale: selectedSale,
-                page: currentPage - 1,
-              })}
-              className="rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-            >
-              ← Précédent
-            </Link>
-          ) : (
-            <span className="rounded-xl bg-[#2b211b]/50 px-4 py-2 text-sm text-amber-100/40">
-              ← Précédent
-            </span>
-          )}
-
-          {currentPage < totalPages ? (
-            <Link
-              href={buildPageLink({
-                search,
-                outcome: selectedOutcome,
-                sale: selectedSale,
-                page: currentPage + 1,
-              })}
-              className="rounded-xl bg-[#2b211b] px-4 py-2 text-sm text-amber-100 hover:bg-[#3a2c24]"
-            >
-              Suivant →
-            </Link>
-          ) : (
-            <span className="rounded-xl bg-[#2b211b]/50 px-4 py-2 text-sm text-amber-100/40">
-              Suivant →
-            </span>
-          )}
+        <div className="sidebar-divider" />
+        <div
+          style={{
+            fontSize: "0.65rem",
+            color: "var(--text-faint)",
+            marginTop: "auto",
+            paddingTop: "1rem",
+          }}
+        >
+          Version V0 · Studio Selen
         </div>
-      </div>
-    </main>
+      </aside>
+
+      {/* Main */}
+      <main className="main-content">
+        {/* Header */}
+        <header className="mb-8 animate-fade-in-up">
+          <p className="page-eyebrow">Studio Agent</p>
+          <h2 className="page-title">Conclusions d'appel</h2>
+          <p className="page-subtitle">
+            Synthèse des appels et rendez-vous · {count ?? 0} entrée
+            {(count ?? 0) > 1 ? "s" : ""}
+          </p>
+        </header>
+
+        {/* Stats rapides */}
+        <section
+          className="mb-6 grid gap-3 sm:grid-cols-3 animate-fade-in-up"
+          style={{ animationDelay: "60ms" }}
+        >
+          <div className="stat-card">
+            <p className="stat-label">Conclusions</p>
+            <p className="stat-value">{safeRows.length}</p>
+          </div>
+          <div className="stat-card">
+            <p className="stat-label">Ventes gagnées</p>
+            <p className="stat-value">{salesWon}</p>
+          </div>
+          <div className="stat-card stat-card-accent">
+            <p className="stat-label">CA visible</p>
+            <p className="stat-value stat-value-accent">
+              {revenue.toLocaleString("fr-FR")} €
+            </p>
+          </div>
+        </section>
+
+        {/* Filtres */}
+        <form
+          method="GET"
+          className="card mb-6 p-4 animate-fade-in-up"
+          style={{ animationDelay: "100ms" }}
+        >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="lg:col-span-2">
+              <label
+                className="mb-1.5 block"
+                style={{
+                  fontSize: "0.72rem",
+                  color: "var(--text-muted)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Rechercher
+              </label>
+              <input
+                type="text"
+                name="search"
+                defaultValue={search}
+                placeholder="Nom organisme ou email…"
+                className="input-studio"
+              />
+            </div>
+
+            <div>
+              <label
+                className="mb-1.5 block"
+                style={{
+                  fontSize: "0.72rem",
+                  color: "var(--text-muted)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Conclusion
+              </label>
+              <select
+                name="outcome"
+                defaultValue={selectedOutcome}
+                className="input-studio"
+              >
+                <option value="">Toutes</option>
+                <option value="won_audit_blanc">Vente audit blanc</option>
+                <option value="won_preparation_qualiopi">
+                  Vente préparation Qualiopi
+                </option>
+                <option value="won_preparation_nda">
+                  Vente préparation NDA
+                </option>
+                <option value="won_gestion_quotidienne">
+                  Vente gestion quotidienne
+                </option>
+                <option value="needs_followup_call">À rappeler</option>
+                <option value="not_interested">Pas intéressé</option>
+                <option value="no_answer">Injoignable</option>
+                <option value="other">Autre</option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                className="mb-1.5 block"
+                style={{
+                  fontSize: "0.72rem",
+                  color: "var(--text-muted)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Vente
+              </label>
+              <select
+                name="sale"
+                defaultValue={selectedSale}
+                className="input-studio"
+              >
+                <option value="">Toutes</option>
+                <option value="won">Gagnée</option>
+                <option value="lost">Perdue</option>
+                <option value="none">Sans issue</option>
+              </select>
+            </div>
+          </div>
+
+          <input type="hidden" name="page" value="1" />
+
+          <div className="mt-3 flex gap-2">
+            <button type="submit" className="btn-primary">
+              Filtrer
+            </button>
+            <Link href="/conclusions-appels" className="btn-secondary">
+              Réinitialiser
+            </Link>
+          </div>
+        </form>
+
+        {/* Erreur Supabase */}
+        {error && (
+          <div
+            className="mb-4 rounded-xl border p-3 text-sm"
+            style={{
+              background: "rgba(127,29,29,0.2)",
+              borderColor: "rgba(239,68,68,0.25)",
+              color: "#f87171",
+            }}
+          >
+            Erreur Supabase : {error.message}
+          </div>
+        )}
+
+        {/* Tableau */}
+        <div
+          className="card overflow-hidden animate-fade-in-up"
+          style={{ animationDelay: "140ms" }}
+        >
+          <table className="table-studio">
+            <thead>
+              <tr>
+                <th>Organisme</th>
+                <th>Email</th>
+                <th>Type</th>
+                <th>Conclusion</th>
+                <th>Résumé</th>
+                <th>Vente</th>
+                <th>Montant</th>
+                <th>Relance</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {safeRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="py-10 text-center"
+                    style={{ color: "var(--text-faint)" }}
+                  >
+                    Aucune conclusion ne correspond à ces filtres.
+                  </td>
+                </tr>
+              ) : (
+                safeRows.map((row: any) => {
+                  const prospect = Array.isArray(row.prospect)
+                    ? row.prospect[0]
+                    : row.prospect;
+
+                  return (
+                    <tr key={row.id}>
+                      <td>
+                        <Link
+                          href={`/prospects/${prospect.id}`}
+                          style={{
+                            color: "var(--text-primary)",
+                            fontWeight: 500,
+                            textDecoration: "none",
+                          }}
+                          className="hover:underline"
+                        >
+                          {prospect.organization_name ?? "Sans nom"}
+                        </Link>
+                      </td>
+                      <td style={{ fontSize: "0.78rem" }}>
+                        {prospect.email_found || prospect.email || "—"}
+                      </td>
+                      <td style={{ fontSize: "0.78rem" }}>
+                        {buildProspectTypeLabel(prospect.prospect_type)}
+                      </td>
+                      <td>
+                        <OutcomeBadge outcome={row.call_outcome} />
+                      </td>
+                      <td>
+                        <div
+                          style={{
+                            maxWidth: 280,
+                            whiteSpace: "pre-wrap",
+                            fontSize: "0.8rem",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          {row.call_summary || "—"}
+                        </div>
+                      </td>
+                      <td>
+                        <SaleBadge status={row.sale_status} />
+                      </td>
+                      <td style={{ fontSize: "0.82rem" }}>
+                        {row.sale_amount != null
+                          ? `${Number(row.sale_amount).toLocaleString("fr-FR")} €`
+                          : "—"}
+                      </td>
+                      <td style={{ fontSize: "0.78rem", whiteSpace: "nowrap" }}>
+                        {row.followup_needed
+                          ? `Oui${row.followup_date ? ` · ${formatDate(row.followup_date)}` : ""}`
+                          : "Non"}
+                      </td>
+                      <td style={{ fontSize: "0.78rem", whiteSpace: "nowrap" }}>
+                        {formatDate(row.created_at)}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        <div
+          className="mt-5 flex items-center justify-between"
+          style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}
+        >
+          <span>
+            Page {currentPage} sur {totalPages}
+          </span>
+          <div className="flex gap-2">
+            {currentPage > 1 ? (
+              <Link
+                href={buildPageLink({
+                  search,
+                  outcome: selectedOutcome,
+                  sale: selectedSale,
+                  page: currentPage - 1,
+                })}
+                className="btn-secondary"
+              >
+                ← Précédent
+              </Link>
+            ) : (
+              <span
+                className="btn-secondary"
+                style={{ opacity: 0.35, pointerEvents: "none" }}
+              >
+                ← Précédent
+              </span>
+            )}
+            {currentPage < totalPages ? (
+              <Link
+                href={buildPageLink({
+                  search,
+                  outcome: selectedOutcome,
+                  sale: selectedSale,
+                  page: currentPage + 1,
+                })}
+                className="btn-secondary"
+              >
+                Suivant →
+              </Link>
+            ) : (
+              <span
+                className="btn-secondary"
+                style={{ opacity: 0.35, pointerEvents: "none" }}
+              >
+                Suivant →
+              </span>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
   );
 }

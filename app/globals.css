@@ -1,11 +1,46 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ─── Tokens design Studio Selen ────────────────────────────────────────────── */
 
+:root {
+  /* Fonds */
+  --bg-deep: #0c0804;
+  --bg-base: #111009;
+  --bg-sidebar: #16120b;
+  --bg-surface: #1c1710;
+  --bg-card: #201a12;
+  --bg-card-hover: #272010;
+  --bg-input: #1c1710;
+  --bg-active: #2a1f0e;
+
+  /* Dorés */
+  --gold-bright: #f0c040;
+  --gold-mid: #c9963a;
+  --gold-muted: #8a6428;
+  --gold-dim: #5a4018;
+  --gold-ghost: rgba(192, 148, 56, 0.08);
+
+  /* Texte */
+  --text-primary: #e8d8b8;
+  --text-secondary: #b89860;
+  --text-muted: #6a5030;
+  --text-faint: #3a2c18;
+
+  /* Bordures */
+  --border-subtle: rgba(90, 64, 24, 0.35);
+  --border-mid: rgba(138, 100, 40, 0.45);
+  --border-accent: rgba(192, 148, 56, 0.6);
+
+  /* Accent bas de page */
+  --accent-stripe: #e040c8;
+
+  /* Typographie */
   --font-title: var(--font-cinzel);
   --font-body: var(--font-inter);
+
+  /* Héritage Tailwind */
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
 }
 
 @theme inline {
@@ -14,17 +49,25 @@
   --font-sans: var(--font-body);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Reset & base ───────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  box-shadow: inset 0 -2px 0 var(--accent-stripe);
+  min-height: 100vh;
 }
 
 h1,
@@ -33,9 +76,420 @@ h3 {
   font-family: var(--font-title);
 }
 
-/* =========================
-   ANIMATIONS GÉNÉRALES
-========================= */
+/* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gold-dim);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gold-muted);
+}
+
+/* ─── Layout shell ───────────────────────────────────────────────────────────── */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  padding: 1.75rem 1.25rem 1.25rem;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
+  overflow-y: auto;
+}
+
+.main-content {
+  margin-left: 260px;
+  flex: 1;
+  min-height: 100vh;
+  padding: 2.5rem 2.5rem 4rem;
+}
+
+/* ─── Sidebar composants ─────────────────────────────────────────────────────── */
+
+.sidebar-brand-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+.sidebar-title {
+  font-family: var(--font-title);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+  margin-bottom: 0.2rem;
+}
+.sidebar-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+}
+.sidebar-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 1rem 0;
+}
+.sidebar-nav-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
+}
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  margin-bottom: 0.15rem;
+}
+.sidebar-nav-item:hover {
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+.sidebar-nav-item.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.sidebar-selion-widget {
+  margin-top: auto;
+  padding: 0.9rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--bg-active);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.sidebar-selion-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold-mid);
+  margin-bottom: 0.2rem;
+}
+.sidebar-selion-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* ─── Page header ────────────────────────────────────────────────────────────── */
+
+.page-eyebrow {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold-muted);
+  margin-bottom: 0.4rem;
+}
+.page-title {
+  font-family: var(--font-title);
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.015em;
+  line-height: 1.15;
+}
+.page-subtitle {
+  margin-top: 0.4rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* ─── Cards ──────────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.875rem;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.card:hover {
+  border-color: var(--border-mid);
+  background: var(--bg-card-hover);
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.875rem;
+  padding: 1.1rem 1.25rem;
+  transition: border-color 0.2s;
+}
+.stat-card:hover {
+  border-color: var(--border-mid);
+}
+.stat-card-accent {
+  background: linear-gradient(135deg, #2a1a08 0%, #1c1208 100%);
+  border-color: rgba(192, 148, 56, 0.3);
+}
+.stat-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.stat-value {
+  font-family: var(--font-title);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.stat-value-accent {
+  color: var(--gold-bright);
+}
+
+/* ─── Section title ──────────────────────────────────────────────────────────── */
+
+.section-title {
+  font-family: var(--font-title);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+/* ─── Badges ─────────────────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.badge-blue {
+  background: rgba(30, 58, 138, 0.35);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #7db4f5;
+}
+.badge-green {
+  background: rgba(6, 78, 59, 0.35);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #5ed9a8;
+}
+.badge-gold {
+  background: rgba(120, 53, 15, 0.4);
+  border-color: rgba(192, 148, 56, 0.35);
+  color: var(--gold-mid);
+}
+.badge-orange {
+  background: rgba(120, 53, 15, 0.3);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #f5b84a;
+}
+.badge-muted {
+  background: rgba(30, 22, 12, 0.6);
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+.badge-red {
+  background: rgba(127, 29, 29, 0.35);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+/* ─── Boutons ────────────────────────────────────────────────────────────────── */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 0.6rem;
+  background: var(--gold-mid);
+  border: 1px solid var(--gold-bright);
+  color: #0c0804;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.btn-primary:hover {
+  background: var(--gold-bright);
+  box-shadow: 0 0 16px rgba(240, 192, 64, 0.2);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.6rem;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.btn-secondary:hover {
+  background: var(--bg-active);
+  border-color: var(--border-mid);
+  color: var(--text-secondary);
+}
+
+/* ─── Table ──────────────────────────────────────────────────────────────────── */
+
+.table-studio {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.table-studio thead tr {
+  border-bottom: 1px solid var(--border-mid);
+}
+.table-studio thead th {
+  padding: 0.7rem 1rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.table-studio tbody tr {
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.12s;
+}
+.table-studio tbody tr:hover {
+  background: var(--bg-card-hover);
+}
+.table-studio tbody td {
+  padding: 0.85rem 1rem;
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+/* ─── Inputs ─────────────────────────────────────────────────────────────────── */
+
+.input-studio {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.input-studio::placeholder {
+  color: var(--text-faint);
+}
+.input-studio:focus {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px rgba(192, 148, 56, 0.08);
+}
+
+/* ─── Grimoire — animations page-turn ───────────────────────────────────────── */
+
+@keyframes sb-flip-right {
+  0% {
+    transform: perspective(700px) rotateY(0deg);
+    opacity: 1;
+  }
+  45% {
+    transform: perspective(700px) rotateY(-55deg);
+    opacity: 0.45;
+  }
+  100% {
+    transform: perspective(700px) rotateY(0deg);
+    opacity: 1;
+  }
+}
+@keyframes sb-flip-left {
+  0% {
+    transform: perspective(700px) rotateY(0deg);
+    opacity: 1;
+  }
+  45% {
+    transform: perspective(700px) rotateY(55deg);
+    opacity: 0.45;
+  }
+  100% {
+    transform: perspective(700px) rotateY(0deg);
+    opacity: 1;
+  }
+}
+
+.sb-flip-right {
+  animation: sb-flip-right 0.4s ease-in-out;
+  transform-origin: left center;
+}
+.sb-flip-left {
+  animation: sb-flip-left 0.4s ease-in-out;
+  transform-origin: right center;
+}
+
+/* ─── Animations Sélion (INTOUCHABLES) ───────────────────────────────────────── */
 
 @keyframes float {
   0%,
@@ -46,7 +500,6 @@ h3 {
     transform: translateY(-10px);
   }
 }
-
 .animate-float {
   animation: float 4s ease-in-out infinite;
 }
@@ -77,14 +530,9 @@ h3 {
     transform: translate(95px, -85px) rotate(-10deg);
   }
 }
-
 .animate-plumOrbit {
   animation: plumOrbit 9s ease-in-out infinite;
 }
-
-/* =========================
-   HALO SÉLION
-========================= */
 
 @keyframes haloPulse {
   0%,
@@ -97,7 +545,6 @@ h3 {
     transform: scale(1.06);
   }
 }
-
 @keyframes haloPulseWide {
   0%,
   100% {
@@ -109,7 +556,6 @@ h3 {
     transform: scale(1.1);
   }
 }
-
 .selion-halo-main {
   position: absolute;
   width: 280px;
@@ -120,7 +566,6 @@ h3 {
   animation: haloPulse 3.8s ease-in-out infinite;
   pointer-events: none;
 }
-
 .selion-halo-secondary {
   position: absolute;
   width: 360px;
@@ -131,18 +576,12 @@ h3 {
   animation: haloPulseWide 5.4s ease-in-out infinite;
   pointer-events: none;
 }
-
-/* =========================
-   YEUX QUI CLIGNENT
-========================= */
-
 .eye {
   position: relative;
   width: 22px;
   height: 12px;
   overflow: hidden;
 }
-
 .blink {
   position: absolute;
   inset: 0;
@@ -151,7 +590,6 @@ h3 {
   transform-origin: center;
   animation: blinkSimple 6s infinite;
 }
-
 @keyframes blinkSimple {
   0%,
   92%,
@@ -161,4 +599,20 @@ h3 {
   95% {
     transform: scaleY(1);
   }
+}
+
+/* ─── Animations UI ──────────────────────────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s ease-out both;
 }
