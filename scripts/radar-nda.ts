@@ -18,6 +18,11 @@ const NDA_CSV_URL = getRequiredEnv("NDA_CSV_URL");
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+const HISTORY_DAYS = 3;
+const SNAPSHOT_BATCH_SIZE = 1000;
+const HISTORY_PAGE_SIZE = 20000;
+const PROSPECT_BATCH_SIZE = 500;
+
 type CsvRow = Record<string, string>;
 
 function normalizeText(value: string | null | undefined): string {
@@ -54,6 +59,12 @@ function getTodayParis(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(now);
+}
+
+function getPastParisDate(baseDate: string, daysBack: number): string {
+  const d = new Date(`${baseDate}T12:00:00`);
+  d.setDate(d.getDate() - daysBack);
+  return d.toISOString().slice(0, 10);
 }
 
 function guessField(row: CsvRow, candidates: string[]): string {
@@ -144,6 +155,56 @@ async function fetchCsvWithTimeout(
   }
 }
 
+async function fetchHistoryRows(
+  historyFrom: string,
+  today: string,
+): Promise<
+  Array<{
+    comparison_key: string | null;
+    siret: string | null;
+    organization_name: string | null;
+  }>
+> {
+  const historyRows: Array<{
+    comparison_key: string | null;
+    siret: string | null;
+    organization_name: string | null;
+  }> = [];
+
+  let rangeFrom = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("nda_snapshots")
+      .select("comparison_key, siret, organization_name")
+      .gte("snapshot_date", historyFrom)
+      .lt("snapshot_date", today)
+      .range(rangeFrom, rangeFrom + HISTORY_PAGE_SIZE - 1);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data || data.length === 0) {
+      break;
+    }
+
+    historyRows.push(...data);
+
+    console.log(
+      `Historique récupéré : ${historyRows.length} lignes (page à partir de ${rangeFrom})`,
+    );
+
+    if (data.length < HISTORY_PAGE_SIZE) {
+      break;
+    }
+
+    rangeFrom += HISTORY_PAGE_SIZE;
+  }
+
+  return historyRows;
+}
+
 async function main() {
   console.log("radar-nda.ts démarrage");
 
@@ -222,10 +283,8 @@ async function main() {
     console.log("8. Lignes uniques à snapshotter =", snapshotRows.length);
 
     if (snapshotRows.length > 0) {
-      const batchSize = 1000;
-
-      for (let i = 0; i < snapshotRows.length; i += batchSize) {
-        const batch = snapshotRows.slice(i, i + batchSize);
+      for (let i = 0; i < snapshotRows.length; i += SNAPSHOT_BATCH_SIZE) {
+        const batch = snapshotRows.slice(i, i + SNAPSHOT_BATCH_SIZE);
 
         const insertSnapshot = await supabase
           .from("nda_snapshots")
@@ -244,50 +303,17 @@ async function main() {
       }
     }
 
-    const historyDate = new Date(today);
-    historyDate.setDate(historyDate.getDate() - 7);
-    const historyFrom = historyDate.toISOString().slice(0, 10);
+    const historyFrom = getPastParisDate(today, HISTORY_DAYS);
+    console.log(
+      `9. Recherche historique depuis ${historyFrom} jusqu’à ${today}`,
+    );
 
-    let historyRows: Array<{
-      nda_number: string | null;
-      siret: string | null;
-      organization_name: string | null;
-      city: string | null;
-    }> = [];
-
-    const pageSize = 1000;
-    let rangeFrom = 0;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from("nda_snapshots")
-        .select("nda_number, siret, organization_name, city")
-        .gte("snapshot_date", historyFrom)
-        .lt("snapshot_date", today)
-        .range(rangeFrom, rangeFrom + pageSize - 1);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      if (!data || data.length === 0) {
-        break;
-      }
-
-      historyRows = historyRows.concat(data);
-
-      if (data.length < pageSize) {
-        break;
-      }
-
-      rangeFrom += pageSize;
-    }
-
-    console.log("9. Lignes snapshot historique =", historyRows.length);
+    const historyRows = await fetchHistoryRows(historyFrom, today);
+    console.log("10. Lignes snapshot historique =", historyRows.length);
 
     if (historyRows.length === 0) {
       console.log(
-        "10. Aucun historique sur 7 jours : initialisation uniquement, aucun prospect créé.",
+        "11. Aucun historique récent : initialisation uniquement, aucun prospect créé.",
       );
 
       await supabase
@@ -315,14 +341,9 @@ async function main() {
     }
 
     const historyComparisonKeys = new Set(
-      historyRows.map((row) =>
-        buildComparisonKey({
-          nda_number: row.nda_number ?? "",
-          siret: row.siret ?? "",
-          organization_name: row.organization_name ?? "",
-          city: row.city ?? "",
-        }),
-      ),
+      historyRows
+        .map((row) => row.comparison_key)
+        .filter((value): value is string => Boolean(value)),
     );
 
     const historySiretKeys = new Set(
@@ -340,11 +361,11 @@ async function main() {
     );
 
     console.log(
-      "10. Clés historique comparaison =",
+      "12. Clés historique comparaison =",
       historyComparisonKeys.size,
     );
-    console.log("11. Clés historique SIRET =", historySiretKeys.size);
-    console.log("12. Clés historique NOM =", historyNameKeys.size);
+    console.log("13. Clés historique SIRET =", historySiretKeys.size);
+    console.log("14. Clés historique NOM =", historyNameKeys.size);
 
     const newOrganizations = snapshotRows.filter((row) => {
       const comparisonKey = row.comparison_key;
@@ -362,7 +383,7 @@ async function main() {
       );
     });
 
-    console.log("13. Nouveaux OF potentiels =", newOrganizations.length);
+    console.log("15. Nouveaux OF potentiels =", newOrganizations.length);
 
     const ndaNumbers = newOrganizations
       .map((org) => org.nda_number)
@@ -422,13 +443,11 @@ async function main() {
       rowsNew += 1;
     }
 
-    console.log("14. Prospects à insérer =", prospectsToInsert.length);
+    console.log("16. Prospects à insérer =", prospectsToInsert.length);
 
     if (prospectsToInsert.length > 0) {
-      const batchSize = 500;
-
-      for (let i = 0; i < prospectsToInsert.length; i += batchSize) {
-        const batch = prospectsToInsert.slice(i, i + batchSize);
+      for (let i = 0; i < prospectsToInsert.length; i += PROSPECT_BATCH_SIZE) {
+        const batch = prospectsToInsert.slice(i, i + PROSPECT_BATCH_SIZE);
 
         const insertProspect = await supabase.from("prospects").insert(batch);
 
@@ -442,9 +461,7 @@ async function main() {
       }
     }
 
-    const purgeDate = new Date(today);
-    purgeDate.setDate(purgeDate.getDate() - 7);
-    const purgeBefore = purgeDate.toISOString().slice(0, 10);
+    const purgeBefore = getPastParisDate(today, 7);
 
     await supabase
       .from("nda_snapshots")
