@@ -1,11 +1,11 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+import Link from "next/link";
 import SelionCompanion from "../components/SelionCompanion";
 import DashboardReminders from "../components/DashboardReminders";
-import { supabase } from "../lib/supabaseClient";
-import Link from "next/link";
 import LogoutButton from "../components/LogoutButton";
+import { supabase } from "../lib/supabaseClient";
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,6 @@ function Sidebar({ activePath }: { activePath: string }) {
 
   return (
     <aside className="sidebar">
-      {/* Brand */}
       <div className="mb-6">
         <p className="sidebar-brand-label">Selen Studio</p>
         <h1 className="sidebar-title">Agent</h1>
@@ -26,7 +25,6 @@ function Sidebar({ activePath }: { activePath: string }) {
 
       <div className="sidebar-divider" />
 
-      {/* Nav */}
       <div className="mb-4">
         <p className="sidebar-nav-label">Navigation</p>
         {navItems.map((item) => (
@@ -43,7 +41,6 @@ function Sidebar({ activePath }: { activePath: string }) {
 
       <div className="sidebar-divider" />
 
-      {/* Sélion widget — ⚠️ animations intouchables */}
       <div className="sidebar-selion-widget mt-auto">
         <div
           className="relative flex-shrink-0"
@@ -59,7 +56,6 @@ function Sidebar({ activePath }: { activePath: string }) {
         </div>
       </div>
 
-      {/* Version + logout */}
       <div className="mt-3 flex items-center justify-between">
         <span style={{ fontSize: "0.65rem", color: "var(--text-faint)" }}>
           Version V0 · Studio Selen
@@ -99,7 +95,7 @@ function StatCard({
   );
 }
 
-// ─── StatusBadge ─────────────────────────────────────────────────────────────
+// ─── StatusBadge ──────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string | null }) {
   const label = status ?? "inconnu";
@@ -109,6 +105,7 @@ function StatusBadge({ status }: { status: string | null }) {
     contacted: "badge badge-blue",
     replied: "badge badge-blue",
     qualified: "badge badge-gold",
+    meeting_booked: "badge badge-blue",
     new: "badge badge-muted",
   };
 
@@ -129,6 +126,9 @@ function getParisDateString() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function Home() {
+  const todayParis = getParisDateString();
+  const startOfTodayParis = `${todayParis}T00:00:00+01:00`;
+
   const { count: prospectsCount } = await supabase
     .from("prospects")
     .select("*", { count: "exact", head: true })
@@ -142,15 +142,22 @@ export default async function Home() {
     .eq("is_visible", true)
     .or("email_found.not.is.null,email.not.is.null");
 
+  const { count: emailsSentTodayCount } = await supabase
+    .from("prospects")
+    .select("*", { count: "exact", head: true })
+    .eq("source", "selion_1_nda")
+    .eq("is_visible", true)
+    .gte("first_outreach_sent_at", startOfTodayParis);
+
   const { data: recentProspects } = await supabase
     .from("prospects")
     .select(
-      "id, organization_name, email, email_found, status, prospect_type, first_email_status, created_at",
+      "id, organization_name, email, email_found, status, prospect_type, first_email_status, created_at, first_outreach_sent_at",
     )
     .eq("source", "selion_1_nda")
     .eq("is_visible", true)
-    .or("email_found.not.is.null,email.not.is.null")
-    .order("created_at", { ascending: false })
+    .gte("first_outreach_sent_at", startOfTodayParis)
+    .order("first_outreach_sent_at", { ascending: false })
     .limit(10);
 
   const { data: allProspectsForStatuses } = await supabase
@@ -174,8 +181,7 @@ export default async function Home() {
   const stats = {
     prospects: prospectsCount ?? 0,
     contactable: contactableCount ?? 0,
-    contacted: allProspects.filter((p) => p.first_email_status === "sent")
-      .length,
+    contacted: emailsSentTodayCount ?? 0,
     replies: allProspects.filter((p) => p.status === "replied").length,
     qualified: allProspects.filter((p) => p.status === "qualified").length,
     meetings: allProspects.filter((p) => p.status === "meeting_booked").length,
@@ -188,16 +194,14 @@ export default async function Home() {
       <Sidebar activePath="/" />
 
       <main className="main-content">
-        {/* Header */}
         <header className="mb-8 animate-fade-in-up">
           <p className="page-eyebrow">Studio Agent</p>
           <h2 className="page-title">Tableau de bord</h2>
           <p className="page-subtitle">
-            Vue d'ensemble du pipeline NDA · Robot 1
+            Vue d&apos;ensemble du pipeline NDA · Robot 1
           </p>
         </header>
 
-        {/* Stats */}
         <section className="mb-8">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
@@ -213,7 +217,7 @@ export default async function Home() {
               delay={40}
             />
             <StatCard
-              title="Emails envoyés"
+              title="Emails envoyés aujourd'hui"
               value={stats.contacted}
               icon="📤"
               delay={80}
@@ -253,9 +257,7 @@ export default async function Home() {
           </div>
         </section>
 
-        {/* Contenu principal */}
         <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
-          {/* Tableau prospects du jour */}
           <div
             className="card overflow-hidden animate-fade-in-up"
             style={{ animationDelay: "120ms" }}
@@ -266,7 +268,7 @@ export default async function Home() {
             >
               <div>
                 <p className="section-title" style={{ marginBottom: 0 }}>
-                  Portefeuille prospects du jour
+                  Prospects contactés aujourd&apos;hui
                 </p>
                 <p
                   style={{
@@ -275,7 +277,7 @@ export default async function Home() {
                     marginTop: "0.15rem",
                   }}
                 >
-                  Contactables · ajoutés aujourd'hui
+                  Premiers emails envoyés aujourd&apos;hui
                 </p>
               </div>
               <Link href="/prospects" className="btn-secondary">
@@ -288,7 +290,7 @@ export default async function Home() {
                 className="flex h-36 items-center justify-center text-sm"
                 style={{ color: "var(--text-faint)" }}
               >
-                Aucun prospect contactable aujourd'hui
+                Aucun prospect contacté aujourd&apos;hui
               </div>
             ) : (
               <table className="table-studio">
@@ -354,7 +356,6 @@ export default async function Home() {
             )}
           </div>
 
-          {/* Notes internes */}
           <div
             className="card p-5 animate-fade-in-up"
             style={{ animationDelay: "160ms" }}
@@ -376,7 +377,7 @@ export default async function Home() {
                 href="/conclusions-appels"
                 className="btn-primary w-full justify-center"
               >
-                Conclusions d'appels →
+                Conclusions d&apos;appels →
               </Link>
             </div>
           </div>

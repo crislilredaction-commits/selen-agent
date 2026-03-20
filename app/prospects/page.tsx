@@ -76,7 +76,7 @@ export default async function ProspectsPage({
   const search = (resolvedSearchParams.search ?? "").trim();
   const selectedType = (resolvedSearchParams.type ?? "").trim();
   const selectedStatus = (resolvedSearchParams.status ?? "").trim();
-  const selectedDate = (resolvedSearchParams.date ?? "today").trim();
+  const selectedDate = (resolvedSearchParams.date ?? "").trim();
   const currentPage = Math.max(
     1,
     Number(resolvedSearchParams.page ?? "1") || 1,
