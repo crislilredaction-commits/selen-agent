@@ -199,7 +199,7 @@ async function main() {
   try {
     // ── 2. Radar NDA — BLOQUANT ───────────────────────────────────────────
     // Si radar plante, pas de nouveaux prospects → inutile de continuer.
-    await runScript("radar-nda.ts");
+    await runScriptSafe("radar-nda.ts", 30 * 60 * 1_000);
 
     // ── 3. Enrichissement — non bloquant ──────────────────────────────────
     // Un crash d'enrichissement ne doit pas empêcher les envois du backlog
