@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+
 dotenv.config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
@@ -23,22 +24,93 @@ const supabase = createClient(
 
 /**
  * Nombre maximum d'emails envoyés par run.
- * On ne filtre plus par date de création — cette limite journalière
- * est le seul régulateur de débit.
  */
 const DAILY_SEND_LIMIT = 20;
+
+/**
+ * Nombre de prospects récupérés AVANT filtrage.
+ *
+ * Important :
+ * Si on récupère seulement 20 prospects et que les 20 sont filtrés,
+ * le robot envoie 0 alors qu'il peut y avoir des prospects valides ensuite.
+ */
+const FETCH_LIMIT = 100;
 
 const MIN_DELAY_MS = 2_000;
 const MAX_EXTRA_DELAY_MS = 3_000;
 
 /**
  * Un prospect resté à "sending" depuis plus de SENDING_TIMEOUT_MS est
- * considéré comme un crash (le process a été tué entre markSending et
- * l'écriture du statut "sent"). On le repasse à "failed" pour retry.
+ * considéré comme un crash.
  */
-const SENDING_TIMEOUT_MS = 15 * 60 * 1_000; // 15 minutes
+const SENDING_TIMEOUT_MS = 15 * 60 * 1_000;
 
-// ─── Utilitaires ─────────────────────────────────────────────────────────────
+// ─── Domaines / règles ────────────────────────────────────────────────────────
+
+const BLOCKED_EXACT_DOMAINS = new Set([
+  "dataprospects.fr",
+  "eterritoire.com",
+  "eterritoire.fr",
+  "example.com",
+  "domain.com",
+  "email.com",
+]);
+
+const BLOCKED_PLATFORM_DOMAINS = new Set(["hellowork.com", "societe.com"]);
+
+const ALLOWED_GENERIC_PROVIDERS = new Set([
+  "gmail.com",
+  "gmail.fr",
+  "yahoo.com",
+  "yahoo.fr",
+  "hotmail.com",
+  "hotmail.fr",
+  "outlook.com",
+  "outlook.fr",
+  "icloud.com",
+  "live.fr",
+  "live.com",
+  "orange.fr",
+  "wanadoo.fr",
+  "free.fr",
+  "sfr.fr",
+  "laposte.net",
+  "bbox.fr",
+  "numericable.fr",
+  "proton.me",
+  "protonmail.com",
+]);
+
+const ALLOWED_THIRD_PARTY_DOMAINS = new Set(["simplebo.fr"]);
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type ProspectRow = {
+  id: string;
+  organization_name: string | null;
+  email: string | null;
+  email_found: string | null;
+  website: string | null;
+  website_found: string | null;
+  first_email_status: string | null;
+  workflow_status: string | null;
+  prospect_type: string | null;
+  created_at: string | null;
+  enriched_at: string | null;
+  auto_send_allowed: boolean | null;
+  needs_human_validation: boolean | null;
+  manual_review_needed: boolean | null;
+  last_contact_at: string | null;
+  source: string | null;
+  enrichment_status: string | null;
+};
+
+type CandidateProspect = ProspectRow & {
+  cleaned_email: string;
+  email_warning: string | null;
+};
+
+// ─── Utilitaires ──────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,55 +120,144 @@ function getRandomDelay(): number {
   return MIN_DELAY_MS + Math.floor(Math.random() * MAX_EXTRA_DELAY_MS);
 }
 
+function cleanEmail(rawEmail: string | null | undefined): string {
+  if (!rawEmail) return "";
+
+  let value = rawEmail.trim().toLowerCase();
+
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    // Si la chaîne est mal encodée, on garde la valeur brute.
+  }
+
+  value = value.replace(/^mailto:/i, "");
+  value = value.replace(/\s+/g, "");
+  value = value.replace(/[<>]/g, "");
+
+  // Cas fréquents : email suivi d'un point, d'une virgule ou d'un point-virgule
+  value = value.replace(/[.,;:]+$/g, "");
+
+  return value;
+}
+
 function extractDomainFromEmail(email: string): string {
-  return email.split("@")[1]?.trim().toLowerCase() ?? "";
+  const cleaned = cleanEmail(email);
+  return cleaned.split("@")[1]?.trim().toLowerCase() ?? "";
 }
 
 function extractDomainFromWebsite(website: string | null | undefined): string {
   if (!website) return "";
+
   try {
-    const url = website.startsWith("http") ? website : `https://${website}`;
+    const value = website.trim();
+    const url = value.startsWith("http") ? value : `https://${value}`;
     return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
   } catch {
     return "";
   }
 }
 
+function getRootLabel(domain: string): string {
+  if (!domain) return "";
+
+  const parts = domain.split(".").filter(Boolean);
+  if (parts.length < 2) return domain;
+
+  return parts[parts.length - 2] ?? domain;
+}
+
+function normalizeBrandToken(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function areDomainsCompatible(
+  emailDomain: string,
+  websiteDomain: string,
+): boolean {
+  if (!emailDomain) return false;
+  if (!websiteDomain) return true;
+
+  if (ALLOWED_GENERIC_PROVIDERS.has(emailDomain)) return true;
+  if (ALLOWED_THIRD_PARTY_DOMAINS.has(emailDomain)) return true;
+
+  if (
+    emailDomain === websiteDomain ||
+    emailDomain.endsWith(`.${websiteDomain}`) ||
+    websiteDomain.endsWith(`.${emailDomain}`)
+  ) {
+    return true;
+  }
+
+  const emailRoot = normalizeBrandToken(getRootLabel(emailDomain));
+  const websiteRoot = normalizeBrandToken(getRootLabel(websiteDomain));
+
+  if (!emailRoot || !websiteRoot) return false;
+  if (emailRoot === websiteRoot) return true;
+
+  if (emailRoot.includes(websiteRoot) || websiteRoot.includes(emailRoot)) {
+    return true;
+  }
+
+  return false;
+}
+
 // ─── Validation email ─────────────────────────────────────────────────────────
 
-function isSuspiciousEmail(
+function validateEmailForSending(
   email: string,
   websiteFound?: string | null,
   website?: string | null,
-): { suspicious: boolean; reason?: string } {
-  const normalized = email.trim().toLowerCase();
+): {
+  sendable: boolean;
+  reason?: string;
+  cleanedEmail?: string;
+  warning?: string;
+} {
+  const normalized = cleanEmail(email);
   const domain = extractDomainFromEmail(normalized);
 
-  if (!normalized.includes("@") || !domain) {
-    return { suspicious: true, reason: "email invalide" };
+  if (!normalized || !normalized.includes("@") || !domain) {
+    return { sendable: false, reason: "email invalide" };
   }
 
-  const blockedExactDomains = new Set([
-    "dataprospects.fr",
-    "example.com",
-    "domain.com",
-    "email.com",
-  ]);
+  const basicEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 
-  if (blockedExactDomains.has(domain)) {
-    return { suspicious: true, reason: `domaine bloqué (${domain})` };
+  if (!basicEmailRegex.test(normalized)) {
+    return { sendable: false, reason: "email invalide" };
+  }
+
+  if (BLOCKED_EXACT_DOMAINS.has(domain)) {
+    return {
+      sendable: false,
+      reason: `domaine bloqué (${domain})`,
+    };
+  }
+
+  if (BLOCKED_PLATFORM_DOMAINS.has(domain)) {
+    return {
+      sendable: false,
+      reason: `plateforme bloquée (${domain})`,
+    };
   }
 
   if (
     /\.(png|jpg|jpeg|gif|webp|svg|ico|css|js)$/i.test(normalized) ||
     /@\d+x\./i.test(normalized)
   ) {
-    return { suspicious: true, reason: "email manifestement parasité" };
+    return {
+      sendable: false,
+      reason: "email manifestement parasité",
+    };
   }
 
-  if (/\.(edu)$/i.test(domain)) {
+  if (/\.edu$/i.test(domain)) {
     return {
-      suspicious: true,
+      sendable: false,
       reason: `domaine académique suspect (${domain})`,
     };
   }
@@ -105,38 +266,25 @@ function isSuspiciousEmail(
     extractDomainFromWebsite(websiteFound) || extractDomainFromWebsite(website);
 
   if (referenceWebsiteDomain) {
-    const sameDomain =
-      domain === referenceWebsiteDomain ||
-      domain.endsWith(`.${referenceWebsiteDomain}`) ||
-      referenceWebsiteDomain.endsWith(`.${domain}`);
+    const compatible = areDomainsCompatible(domain, referenceWebsiteDomain);
 
-    const isGenericProvider =
-      /(gmail\.com|yahoo\.com|hotmail\.com|outlook\.com|icloud\.com|live\.fr|live\.com)$/i.test(
-        domain,
-      );
-
-    // Email sur un domaine tiers non-générique et différent du site → suspect
-    if (!sameDomain && !isGenericProvider) {
+    if (!compatible) {
       return {
-        suspicious: true,
-        reason: `domaine incohérent avec le site (${domain} vs ${referenceWebsiteDomain})`,
+        sendable: true,
+        cleanedEmail: normalized,
+        warning: `domaine différent du site (${domain} vs ${referenceWebsiteDomain})`,
       };
     }
   }
 
-  return { suspicious: false };
+  return {
+    sendable: true,
+    cleanedEmail: normalized,
+  };
 }
 
-// ─── Cleanup des "sending" orphelins ─────────────────────────────────────────
+// ─── Cleanup des "sending" orphelins ──────────────────────────────────────────
 
-/**
- * Repasse à "failed" les prospects coincés en statut "sending" depuis
- * plus de SENDING_TIMEOUT_MS.
- *
- * Cas couvert : process tué entre le markSending et l'écriture du "sent".
- * Sans ce cleanup, ces prospects resteraient bloqués indéfiniment car ils
- * ne correspondent plus aux filtres de sélection (null / not_sent / failed).
- */
 async function cleanupStaleSending(): Promise<void> {
   const cutoff = new Date(Date.now() - SENDING_TIMEOUT_MS).toISOString();
 
@@ -161,16 +309,8 @@ async function cleanupStaleSending(): Promise<void> {
   }
 }
 
-// ─── Claim prospect (test-and-set) ───────────────────────────────────────────
+// ─── Claim prospect ───────────────────────────────────────────────────────────
 
-/**
- * Réserve atomiquement un prospect pour cet envoi en passant son statut
- * à "sending". La condition sur les statuts éligibles est un test-and-set :
- * si un autre run a déjà pris ce prospect, la mise à jour touche 0 lignes
- * et on retourne false → on saute ce prospect.
- *
- * Garantit qu'un même email n'est jamais envoyé deux fois en parallèle.
- */
 async function claimForSending(prospectId: string): Promise<boolean> {
   const { data: currentRow, error: readError } = await supabase
     .from("prospects")
@@ -223,18 +363,7 @@ async function claimForSending(prospectId: string): Promise<boolean> {
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
 
-  // ── 1. Cleanup des "sending" orphelins ────────────────────────────────────
   await cleanupStaleSending();
-
-  // ── 2. Récupération des prospects éligibles ───────────────────────────────
-  //
-  // CORRECTIF PRINCIPAL : suppression du filtre .gte("created_at", today).
-  // Ce qui pilote l'éligibilité c'est uniquement l'état du prospect,
-  // pas sa date de création. Cela permet de traiter le backlog (prospects
-  // enrichis hier soir, après un run raté, etc.).
-  //
-  // On inclut "failed" dans les statuts récupérables pour le retry,
-  // et on ne filtre plus sur "sending" (géré par le cleanup ci-dessus).
 
   const { data: prospects, error } = await supabase
     .from("prospects")
@@ -253,41 +382,66 @@ async function main() {
       "first_email_status.is.null,first_email_status.eq.not_sent,first_email_status.eq.failed",
     )
     .order("enriched_at", { ascending: true, nullsFirst: false })
-    .limit(DAILY_SEND_LIMIT);
+    .limit(FETCH_LIMIT);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  // ── 3. Filtrage email valide + non-suspect ────────────────────────────────
+  const fetchedProspects = (prospects ?? []) as ProspectRow[];
 
-  const candidates = (prospects ?? []).filter((p) => {
-    const email = p.email_found || p.email;
-    if (!email) return false;
+  const candidates: CandidateProspect[] = [];
 
-    const check = isSuspiciousEmail(email, p.website_found, p.website);
+  for (const prospect of fetchedProspects) {
+    const rawEmail = prospect.email_found || prospect.email;
 
-    if (check.suspicious) {
-      console.log(
-        `Email exclu → ${p.organization_name || "Prospect"} <${email}> | raison: ${check.reason}`,
-      );
-      return false;
+    if (!rawEmail) {
+      continue;
     }
 
-    return true;
-  });
+    const check = validateEmailForSending(
+      rawEmail,
+      prospect.website_found,
+      prospect.website,
+    );
 
-  console.log(`Prospects récupérés : ${(prospects ?? []).length}`);
+    if (!check.sendable) {
+      console.log(
+        `Email exclu → ${
+          prospect.organization_name || "Prospect"
+        } <${rawEmail}> | raison: ${check.reason}`,
+      );
+      continue;
+    }
+
+    if (check.warning) {
+      console.log(
+        `Email conservé avec alerte → ${
+          prospect.organization_name || "Prospect"
+        } <${check.cleanedEmail}> | ${check.warning}`,
+      );
+    }
+
+    candidates.push({
+      ...prospect,
+      cleaned_email: check.cleanedEmail ?? cleanEmail(rawEmail),
+      email_warning: check.warning ?? null,
+    });
+
+    if (candidates.length >= DAILY_SEND_LIMIT) {
+      break;
+    }
+  }
+
+  console.log(`Prospects récupérés : ${fetchedProspects.length}`);
   console.log(`Prospects à contacter : ${candidates.length}`);
-
-  // ── 4. Envoi ──────────────────────────────────────────────────────────────
 
   let sent = 0;
   let skipped = 0;
   let failed = 0;
 
   for (const prospect of candidates) {
-    const email = prospect.email_found || prospect.email;
+    const email = prospect.cleaned_email;
     if (!email) continue;
 
     const label = prospect.organization_name || "Prospect";
@@ -296,30 +450,27 @@ async function main() {
       console.log(`Préparation envoi → ${label} <${email}>`);
 
       if (!EMAIL_SENDING_ENABLED) {
-        // Mode dry-run : on ne touche pas à la DB, on simule juste le log
         console.log(`EMAIL BLOQUÉ (mode test) → ${label} <${email}>`);
         skipped++;
         continue;
       }
 
-      // ── Test-and-set : réserver ce prospect pour cet envoi ────────────────
-      // Si retourne false → un autre run l'a déjà pris → on saute
       const claimed = await claimForSending(prospect.id);
+
       if (!claimed) {
         console.log(`Skipped (déjà en cours d'envoi) → ${label}`);
         skipped++;
         continue;
       }
 
-      // ── Envoi effectif ────────────────────────────────────────────────────
       await sendProspectQuestionnaireEmail({
         to: email,
         organizationName: prospect.organization_name,
         prospectId: prospect.id,
       });
 
-      // ── Mise à jour statut post-envoi ─────────────────────────────────────
       const now = new Date().toISOString();
+
       const followupDate = new Date(
         Date.now() + 7 * 24 * 60 * 60 * 1_000,
       ).toISOString();
@@ -339,15 +490,11 @@ async function main() {
         .eq("id", prospect.id);
 
       if (updateError) {
-        // L'email est parti mais la DB n'a pas été mise à jour.
-        // On log l'erreur mais on ne lève pas d'exception pour ne pas
-        // masquer l'envoi réussi dans les stats.
         console.error(
           `Erreur mise à jour post-envoi pour ${label}: ${updateError.message}`,
         );
       }
 
-      // ── Log dans prospect_messages ────────────────────────────────────────
       const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospect.id}`;
 
       const { error: logError } = await supabase
@@ -357,12 +504,16 @@ async function main() {
           channel: "email",
           direction: "outbound",
           message_type: "first_questionnaire_email",
-          subject: "Félicitations pour votre NDA ✨",
-          body: `Mail automatique envoyé avec lien questionnaire : ${questionnaireLink}`,
+          subject: "Préparer la suite après votre NDA",
+          body: `Mail automatique envoyé. Proposition : rendez-vous ou auto-audit Qualiopi. Lien questionnaire historique : ${questionnaireLink}`,
           delivery_status: "sent",
           auto_generated: true,
           human_validated: false,
           validation_required: false,
+          metadata: {
+            cleaned_email: email,
+            email_warning: prospect.email_warning,
+          },
         });
 
       if (logError) {
@@ -372,16 +523,16 @@ async function main() {
       sent++;
       console.log(`Envoyé ✓ → ${label} <${email}>`);
 
-      // ── Délai anti-spam entre envois ──────────────────────────────────────
       const delay = getRandomDelay();
       console.log(`Pause : ${delay} ms`);
       await sleep(delay);
     } catch (err) {
       failed++;
+
       const message = err instanceof Error ? err.message : String(err);
+
       console.error(`Erreur envoi ${email}: ${message}`);
 
-      // Repasse à "failed" pour retry au prochain run
       await supabase
         .from("prospects")
         .update({ first_email_status: "failed" })

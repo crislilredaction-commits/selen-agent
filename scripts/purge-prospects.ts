@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+
 dotenv.config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
@@ -19,10 +20,28 @@ const supabase = createClient(
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 /**
- * Taille des batchs pour les UPDATE en base.
- * Évite les requêtes trop larges sur gros volumes.
+ * Sécurité :
+ * Tant que PURGE_ENABLED n'est pas explicitement à "true",
+ * le script analyse et logue, mais ne masque rien.
  */
-const PURGE_BATCH_SIZE = 500;
+const PURGE_ENABLED = process.env.PURGE_ENABLED === "true";
+
+/**
+ * Nombre maximum de prospects à analyser par run.
+ * Évite de faire travailler trop lourdement Supabase.
+ */
+const FETCH_LIMIT = 2_000;
+
+/**
+ * Taille des batchs pour les UPDATE.
+ */
+const PURGE_BATCH_SIZE = 250;
+
+/**
+ * On ne masque pas les no_result récents.
+ * Cela laisse une chance aux autres scripts / corrections / enrichissements futurs.
+ */
+const MIN_AGE_DAYS_BEFORE_HIDE = 7;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,97 +51,102 @@ type ProspectToPurge = {
   email: string | null;
   email_found: string | null;
   enrichment_status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  first_email_status: string | null;
+  workflow_status: string | null;
+  status: string | null;
+  last_contact_at: string | null;
 };
 
-// ─── Logique de purge ─────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isBlank(value: string | null | undefined): boolean {
+  return !value || value.trim() === "";
+}
+
+function getCutoffIso(): string {
+  const cutoff = new Date(
+    Date.now() - MIN_AGE_DAYS_BEFORE_HIDE * 24 * 60 * 60 * 1_000,
+  );
+
+  return cutoff.toISOString();
+}
 
 /**
- * Retourne true si l'enrichissement est définitivement terminé
- * et que le prospect peut légitimement être masqué.
+ * Nouvelle logique prudente :
  *
- * Statuts terminaux éligibles à la purge :
- *   - "no_result"  : enrichissement terminé, aucun contact trouvé
- *   - "enriched"   : enrichissement terminé mais sans email_found
- *                    (données partielles, non utilisables pour l'envoi)
+ * On masque uniquement les prospects :
+ * - visibles ;
+ * - source Sélion NDA ;
+ * - sans email dans email_found ET email ;
+ * - enrichment_status = "no_result" ;
+ * - anciens de plus de 7 jours ;
+ * - jamais contactés ;
+ * - sans workflow métier actif.
  *
- * Statuts EXCLUS de la purge (intentionnellement) :
- *   - "pending"     : pas encore enrichi → ne pas purger
- *   - "in_progress" : enrichissement en cours → ne pas purger
- *   - "error"       : erreur temporaire, sera retenté → ne pas purger
- *   - "failed"      : idem error → ne pas purger
- *   - null          : statut inconnu → ne pas purger par sécurité
+ * On ne masque PLUS "enriched" sans email.
  */
-function isTerminalWithoutEmail(prospect: ProspectToPurge): boolean {
-  const terminalStatuses = ["no_result", "enriched"];
+function shouldHideProspect(prospect: ProspectToPurge): boolean {
+  const hasEmail = !isBlank(prospect.email_found) || !isBlank(prospect.email);
 
-  if (!terminalStatuses.includes(prospect.enrichment_status ?? "")) {
+  if (hasEmail) return false;
+
+  if (prospect.enrichment_status !== "no_result") {
     return false;
   }
 
-  const hasEmail =
-    (prospect.email_found?.trim() ?? "") !== "" ||
-    (prospect.email?.trim() ?? "") !== "";
-
-  return !hasEmail;
-}
-
-// ─── Fetch paginé des candidats à la purge ───────────────────────────────────
-
-/**
- * Récupère les prospects éligibles à la purge directement filtrés en DB.
- *
- * On délègue le filtre à Supabase plutôt que de charger tous les prospects
- * visibles en mémoire (évite le SELECT * de 150k lignes).
- *
- * Critères DB :
- *   - is_visible = true
- *   - source = "selion_1_nda"
- *   - enrichment_status IN ("no_result", "enriched")
- *   - email_found IS NULL
- *
- * Le check sur email (colonne legacy) est fait en JS après récupération
- * car la colonne peut contenir des chaînes vides plutôt que NULL.
- */
-async function fetchPurgeCandidates(): Promise<ProspectToPurge[]> {
-  const candidates: ProspectToPurge[] = [];
-  let rangeFrom = 0;
-  const PAGE_SIZE = 1_000;
-
-  while (true) {
-    const { data, error } = await supabase
-      .from("prospects")
-      .select("id, organization_name, email, email_found, enrichment_status")
-      .eq("is_visible", true)
-      .eq("source", "selion_1_nda")
-      .in("enrichment_status", ["no_result", "enriched"])
-      .is("email_found", null)
-      .range(rangeFrom, rangeFrom + PAGE_SIZE - 1);
-
-    if (error) throw new Error(`fetchPurgeCandidates: ${error.message}`);
-    if (!data || data.length === 0) break;
-
-    candidates.push(...(data as ProspectToPurge[]));
-
-    console.log(
-      `Candidats récupérés : ${candidates.length} (page à partir de ${rangeFrom})`,
-    );
-
-    if (data.length < PAGE_SIZE) break;
-    rangeFrom += PAGE_SIZE;
+  if (!isBlank(prospect.last_contact_at)) {
+    return false;
   }
 
-  return candidates;
+  if (!isBlank(prospect.first_email_status)) {
+    return false;
+  }
+
+  const workflowStatus = prospect.workflow_status ?? "";
+  const globalStatus = prospect.status ?? "";
+
+  const hasActiveWorkflow =
+    workflowStatus === "questionnaire_sent" ||
+    workflowStatus === "questionnaire_completed" ||
+    workflowStatus === "meeting_booked" ||
+    globalStatus === "contacted" ||
+    globalStatus === "replied" ||
+    globalStatus === "qualified";
+
+  if (hasActiveWorkflow) return false;
+
+  return true;
+}
+
+// ─── Fetch candidats ──────────────────────────────────────────────────────────
+
+async function fetchPurgeCandidates(): Promise<ProspectToPurge[]> {
+  const cutoffIso = getCutoffIso();
+
+  const { data, error } = await supabase
+    .from("prospects")
+    .select(
+      "id, organization_name, email, email_found, enrichment_status, created_at, updated_at, first_email_status, workflow_status, status, last_contact_at",
+    )
+    .eq("is_visible", true)
+    .eq("source", "selion_1_nda")
+    .eq("enrichment_status", "no_result")
+    .is("email_found", null)
+    .lt("updated_at", cutoffIso)
+    .order("updated_at", { ascending: true })
+    .limit(FETCH_LIMIT);
+
+  if (error) {
+    throw new Error(`fetchPurgeCandidates: ${error.message}`);
+  }
+
+  return (data ?? []) as ProspectToPurge[];
 }
 
 // ─── Masquage en batch ────────────────────────────────────────────────────────
 
-/**
- * Masque les prospects par batch d'IDs.
- * Beaucoup plus efficace qu'un UPDATE par prospect (une seule requête
- * par batch vs N requêtes séquentielles).
- *
- * Retourne le nombre de prospects réellement masqués.
- */
 async function hideProspectsBatch(ids: string[]): Promise<number> {
   let hidden = 0;
 
@@ -131,16 +155,17 @@ async function hideProspectsBatch(ids: string[]): Promise<number> {
 
     const { data, error } = await supabase
       .from("prospects")
-      .update({ is_visible: false })
+      .update({
+        is_visible: false,
+      })
       .in("id", batch)
-      .eq("is_visible", true) // idempotence : ne touche pas les déjà masqués
+      .eq("is_visible", true)
       .select("id");
 
     if (error) {
       console.error(
-        `hideProspectsBatch erreur (batch ${i}-${i + batch.length}): ${error.message}`,
+        `hideProspectsBatch erreur batch ${i}-${i + batch.length}: ${error.message}`,
       );
-      // On continue les autres batchs malgré l'erreur
       continue;
     }
 
@@ -157,57 +182,67 @@ async function hideProspectsBatch(ids: string[]): Promise<number> {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log("Purge prospects — démarrage");
+  console.log("Purge prudente prospects — démarrage");
+  console.log(`PURGE_ENABLED = ${PURGE_ENABLED ? "true" : "false"}`);
 
-  // ── 1. Récupérer les candidats éligibles (filtrés en DB) ──────────────────
   const rawCandidates = await fetchPurgeCandidates();
-  console.log(`Candidats pré-filtrés (DB) : ${rawCandidates.length}`);
 
-  // ── 2. Filtre JS complémentaire ───────────────────────────────────────────
-  // Couvre le cas des colonnes email legacy avec chaîne vide au lieu de NULL.
-  const toHide = rawCandidates.filter(isTerminalWithoutEmail);
+  console.log(`Candidats récupérés : ${rawCandidates.length}`);
 
-  console.log(`Prospects à masquer (après filtre JS) : ${toHide.length}`);
+  const toHide = rawCandidates.filter(shouldHideProspect);
+
+  console.log(`Prospects masquables après filtre prudent : ${toHide.length}`);
+
+  const sample = toHide.slice(0, 10).map((p) => ({
+    id: p.id,
+    name: p.organization_name,
+    enrichment_status: p.enrichment_status,
+    updated_at: p.updated_at,
+  }));
+
+  const { error: logError } = await supabase.from("robot_logs").insert({
+    run_type: "purge",
+    level: "info",
+    message: PURGE_ENABLED
+      ? `Purge prudente : ${toHide.length} prospect(s) à masquer`
+      : `Purge prudente en mode simulation : ${toHide.length} prospect(s) seraient masqués`,
+    details: {
+      purge_enabled: PURGE_ENABLED,
+      fetched: rawCandidates.length,
+      to_hide: toHide.length,
+      min_age_days: MIN_AGE_DAYS_BEFORE_HIDE,
+      rule: "hide only old no_result without email and without active workflow",
+      sample,
+    },
+  });
+
+  if (logError) {
+    console.error("Erreur log purge :", logError.message);
+  }
 
   if (toHide.length === 0) {
     console.log("Aucun prospect à masquer.");
     return;
   }
 
-  // ── 3. Log récapitulatif avant masquage ───────────────────────────────────
-  // Un seul log pour N prospects — évite N×2 requêtes séquentielles.
-  const { error: logError } = await supabase.from("robot_logs").insert({
-    run_type: "purge",
-    level: "info",
-    message: `Purge : ${toHide.length} prospect(s) à masquer (sans email, enrichissement terminal)`,
-    details: {
-      count: toHide.length,
-      statuses: [...new Set(toHide.map((p) => p.enrichment_status))],
-      sample_ids: toHide.slice(0, 10).map((p) => ({
-        id: p.id,
-        name: p.organization_name,
-        status: p.enrichment_status,
-      })),
-    },
-  });
-
-  if (logError) {
-    console.error("Erreur log purge :", logError.message);
-    // Non bloquant — on continue la purge même si le log échoue
+  if (!PURGE_ENABLED) {
+    console.log(
+      "Mode simulation : aucun prospect masqué. Pour activer, ajouter PURGE_ENABLED=true dans .env.local",
+    );
+    return;
   }
 
-  // ── 4. Masquage en batch ──────────────────────────────────────────────────
   const ids = toHide.map((p) => p.id);
   const hidden = await hideProspectsBatch(ids);
 
-  // ── 5. Log final ──────────────────────────────────────────────────────────
   const { error: logFinalError } = await supabase.from("robot_logs").insert({
     run_type: "purge",
     level: "info",
-    message: `Purge terminée : ${hidden} prospect(s) masqués sur ${toHide.length} candidats`,
+    message: `Purge prudente terminée : ${hidden} prospect(s) masqués sur ${toHide.length} candidats`,
     details: {
       candidates: toHide.length,
       hidden,
+      purge_enabled: PURGE_ENABLED,
     },
   });
 
@@ -216,7 +251,7 @@ async function main() {
   }
 
   console.log(
-    `Purge prospects — terminée | candidats: ${toHide.length}, masqués: ${hidden}`,
+    `Purge prudente terminée | candidats: ${toHide.length}, masqués: ${hidden}`,
   );
 }
 

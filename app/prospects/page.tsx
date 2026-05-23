@@ -84,9 +84,13 @@ export default async function ProspectsPage({
 
   let query = supabase
     .from("prospects")
-    .select("*", { count: "exact" })
+    .select(
+      "id, organization_name, email, email_found, prospect_type, first_email_status, workflow_status, created_at, enrichment_status",
+      { count: "estimated" },
+    )
     .eq("source", "selion_1_nda")
     .eq("is_visible", true)
+    .eq("enrichment_status", "enriched")
     .or("email_found.not.is.null,email.not.is.null")
     .order("created_at", { ascending: false });
 

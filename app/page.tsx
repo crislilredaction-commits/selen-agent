@@ -131,9 +131,11 @@ export default async function Home() {
 
   const { count: prospectsCount } = await supabase
     .from("prospects")
-    .select("*", { count: "exact", head: true })
+    .select("*", { count: "estimated", head: true })
     .eq("source", "selion_1_nda")
-    .eq("is_visible", true);
+    .eq("is_visible", true)
+    .eq("enrichment_status", "enriched")
+    .or("email_found.not.is.null,email.not.is.null");
 
   const { count: contactableCount } = await supabase
     .from("prospects")
@@ -205,7 +207,7 @@ export default async function Home() {
         <section className="mb-8">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              title="Prospects visibles"
+              title="Contacts exploitables"
               value={stats.prospects}
               icon="👁"
               delay={0}
