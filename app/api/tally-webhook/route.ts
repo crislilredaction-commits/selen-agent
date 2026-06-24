@@ -218,11 +218,18 @@ export async function POST(req: Request) {
       existingProspect.email_found || existingProspect.email || null;
 
     if (targetEmail && !existingProspect.offer_mail_sent_at) {
-      await sendQuestionnaireFollowupEmail({
+      const sendResult = await sendQuestionnaireFollowupEmail({
         to: targetEmail,
         organizationName: existingProspect.organization_name,
         recommendedOfferPrimary: recommendation.primary,
       });
+
+      if ("blocked" in sendResult && sendResult.blocked) {
+        return NextResponse.json({
+          success: true,
+          outboundEmailBlocked: true,
+        });
+      }
 
       const sentAt = new Date().toISOString();
 

@@ -4,6 +4,7 @@ dotenv.config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectQuestionnaireEmail } from "../src/lib/email";
+import { canSendOutboundEmails } from "../src/lib/outbound-email-guard";
 
 // ─── Env ──────────────────────────────────────────────────────────────────────
 
@@ -12,8 +13,6 @@ function getRequiredEnv(name: string): string {
   if (!value) throw new Error(`${name} manquant`);
   return value;
 }
-
-const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
 
 const supabase = createClient(
   getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -363,6 +362,11 @@ async function claimForSending(prospectId: string): Promise<boolean> {
 async function main() {
   console.log("Envoi des premiers emails — démarrage");
 
+  if (!canSendOutboundEmails()) {
+    console.log("Outbound emails disabled, skipping send");
+    return;
+  }
+
   await cleanupStaleSending();
 
   const { data: prospects, error } = await supabase
@@ -449,7 +453,7 @@ async function main() {
     try {
       console.log(`Préparation envoi → ${label} <${email}>`);
 
-      if (!EMAIL_SENDING_ENABLED) {
+      if (!canSendOutboundEmails()) {
         console.log(`EMAIL BLOQUÉ (mode test) → ${label} <${email}>`);
         skipped++;
         continue;

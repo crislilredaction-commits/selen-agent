@@ -7,10 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "nda-radar": "tsx scripts/fetch-nda.ts",
-    "nda-enrich": "tsx scripts/enrich-prospects.ts",
+    "nda-radar": "tsx scripts/radar-nda.ts",
+    "nda-track": "tsx scripts/track-client-nda.ts",
+    "nda-enrich": "tsx scripts/enrich-prospects-V3.ts",
     "send-first-emails": "tsx scripts/send-first-emails.ts",
-    "send-followups": "tsx scripts/send-followups.ts"
+    "send-followups": "tsx scripts/send-followups.ts",
+    "verify:outbound-email-guard": "tsx scripts/verify-outbound-email-guard.ts"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.15.0",

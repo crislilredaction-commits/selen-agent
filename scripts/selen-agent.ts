@@ -197,27 +197,20 @@ async function main() {
   const startedAt = Date.now();
 
   try {
-    // ── 2. Radar NDA — BLOQUANT ───────────────────────────────────────────
-    // Si radar plante, pas de nouveaux prospects → inutile de continuer.
+    // 2. Scan public NDA : snapshot quotidien sans prospection par defaut.
     await runScriptSafe("radar-nda.ts", 30 * 60 * 1_000);
 
-    // ── 3. Enrichissement — non bloquant ──────────────────────────────────
-    // Un crash d'enrichissement ne doit pas empêcher les envois du backlog
-    // déjà enrichi lors des runs précédents.
+    // 3. Enrichissement donnees uniquement : aucun email prospect.
     await runScriptSafe("enrich-prospects-V3.ts");
 
-    // ── 4. Purge — non bloquant ───────────────────────────────────────────
-    // Nettoyage cosmétique, pas critique pour le pipeline d'envoi.
+    // 4. Purge prudente : simulation par defaut, masquage seulement si
+    // SELION_PURGE_ENABLED=true.
     await runScriptSafe("purge-prospects.ts");
 
-    // ── 5. Envoi premiers emails — non bloquant ───────────────────────────
-    // Un crash SMTP partiel ne doit pas bloquer les relances.
-    await runScriptSafe("send-first-emails.ts");
+    // 5. Suivi clients Selen : detection SIRET et felicitation NDA.
+    await runScriptSafe("track-client-nda.ts", 15 * 60 * 1_000);
 
-    // ── 6. Relances — non bloquant ────────────────────────────────────────
-    await runScriptSafe("send-followups.ts");
-
-    // ── 7. Log succès ─────────────────────────────────────────────────────
+    // 6. Log succes.
     const durationMs = Date.now() - startedAt;
 
     await supabase.from("robot_logs").insert({
@@ -235,7 +228,7 @@ async function main() {
       `\n✅ Cycle Sélion terminé en ${Math.round(durationMs / 1_000)}s`,
     );
   } catch (err) {
-    // Seul radar-nda peut arriver ici (étape bloquante).
+    // Protection globale si une erreur sort du flux principal.
     const message = err instanceof Error ? err.message : String(err);
     console.error("\n❌ Erreur bloquante agent :", message);
 

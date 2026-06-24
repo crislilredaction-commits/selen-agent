@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
+import {
+  canSendOutboundEmails,
+  OUTBOUND_EMAILS_DISABLED_MESSAGE,
+} from "@/src/lib/outbound-email-guard";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,6 +13,14 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
+    if (!canSendOutboundEmails()) {
+      console.log(OUTBOUND_EMAILS_DISABLED_MESSAGE);
+      return NextResponse.json(
+        { blocked: true, error: OUTBOUND_EMAILS_DISABLED_MESSAGE },
+        { status: 403 },
+      );
+    }
+
     const resendApiKey = process.env.RESEND_API_KEY;
 
     if (!resendApiKey) {

@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Selion Email Safety
+
+Outbound emails are disabled by default. Set `SELION_OUTBOUND_EMAILS_ENABLED=true` to reactivate prospecting emails.
+
 ## Getting Started
 
 First, run the development server:

@@ -1,13 +1,17 @@
 import dotenv from "dotenv";
 import { Resend } from "resend";
+import {
+  assertOutboundEmailsEnabled,
+  canSendOutboundEmails,
+  getOutboundEmailBlockedResult,
+} from "./outbound-email-guard";
 
 dotenv.config({ path: ".env.local" });
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
-
 function getResendClient() {
+  assertOutboundEmailsEnabled();
   const resendApiKey = process.env.RESEND_API_KEY;
   if (!resendApiKey) throw new Error("RESEND_API_KEY manquant");
   return new Resend(resendApiKey);
@@ -28,13 +32,13 @@ export async function sendProspectQuestionnaireEmail({
 }) {
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
 
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+  if (!canSendOutboundEmails()) {
+    console.log("Outbound emails disabled, skipping send", {
       to,
       subject: `${firstName ? `${firstName}, ` : ""}votre NDA en poche !`,
       organizationName,
     });
-    return { blocked: true };
+    return getOutboundEmailBlockedResult();
   }
 
   const resend = getResendClient();
@@ -188,14 +192,14 @@ export async function sendQuestionnaireFollowupEmail({
   const offerIntro = getOfferIntro(recommendedOfferPrimary);
   const offerLabel = getOfferLabel(recommendedOfferPrimary);
 
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+  if (!canSendOutboundEmails()) {
+    console.log("Outbound emails disabled, skipping send", {
       to,
       subject: "Votre guide Selen + la suite la plus adaptée ✨",
       organizationName,
       recommendedOfferPrimary,
     });
-    return { blocked: true };
+    return getOutboundEmailBlockedResult();
   }
 
   const resend = getResendClient();
@@ -260,13 +264,13 @@ export async function sendProspectFollowupEmail({
 }) {
   const questionnaireLink = `https://tally.so/r/9q11o1?prospect_id=${prospectId}`;
 
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+  if (!canSendOutboundEmails()) {
+    console.log("Outbound emails disabled, skipping send", {
       to,
       subject: "Votre diagnostic administratif Selen est prêt ⭐",
       organizationName,
     });
-    return { blocked: true };
+    return getOutboundEmailBlockedResult();
   }
 
   const resend = getResendClient();
@@ -308,12 +312,12 @@ export async function sendProspectFollowupEmail({
 // ─── Email de test ────────────────────────────────────────────────────────────
 
 export async function sendTestEmail() {
-  if (!EMAIL_SENDING_ENABLED) {
-    console.log("EMAIL NON ENVOYÉ (EMAIL_SENDING_ENABLED=false)", {
+  if (!canSendOutboundEmails()) {
+    console.log("Outbound emails disabled, skipping send", {
       to: "crislil.redaction@gmail.com",
       subject: "Test Selion ✨",
     });
-    return { blocked: true };
+    return getOutboundEmailBlockedResult();
   }
 
   const resend = getResendClient();

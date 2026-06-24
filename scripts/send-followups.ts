@@ -3,6 +3,7 @@ dotenv.config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
 import { sendProspectFollowupEmail } from "../src/lib/email";
+import { canSendOutboundEmails } from "../src/lib/outbound-email-guard";
 
 // ─── Env ──────────────────────────────────────────────────────────────────────
 
@@ -11,8 +12,6 @@ function getRequiredEnv(name: string): string {
   if (!value) throw new Error(`${name} manquant`);
   return value;
 }
-
-const EMAIL_SENDING_ENABLED = process.env.EMAIL_SENDING_ENABLED === "true";
 
 const supabase = createClient(
   getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -144,6 +143,11 @@ async function main() {
   console.log("Robot relance prospects — démarrage");
 
   // ── 1. Cleanup des "sending_followup" orphelins ───────────────────────────
+  if (!canSendOutboundEmails()) {
+    console.log("Outbound emails disabled, skipping send");
+    return;
+  }
+
   await cleanupStaleSendingFollowup();
 
   // ── 2. Calcul du seuil de 7 jours ────────────────────────────────────────
@@ -206,7 +210,7 @@ async function main() {
     try {
       console.log(`Relance → ${label} <${email}>`);
 
-      if (!EMAIL_SENDING_ENABLED) {
+      if (!canSendOutboundEmails()) {
         // Dry-run : pas de touche DB, juste le log
         console.log(`EMAIL BLOQUÉ (mode test) → ${label}`);
         skipped++;

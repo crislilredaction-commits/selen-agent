@@ -21,10 +21,10 @@ const supabase = createClient(
 
 /**
  * Sécurité :
- * Tant que PURGE_ENABLED n'est pas explicitement à "true",
+ * Tant que SELION_PURGE_ENABLED n'est pas explicitement à "true",
  * le script analyse et logue, mais ne masque rien.
  */
-const PURGE_ENABLED = process.env.PURGE_ENABLED === "true";
+const SELION_PURGE_ENABLED = process.env.SELION_PURGE_ENABLED === "true";
 
 /**
  * Nombre maximum de prospects à analyser par run.
@@ -183,7 +183,9 @@ async function hideProspectsBatch(ids: string[]): Promise<number> {
 
 async function main() {
   console.log("Purge prudente prospects — démarrage");
-  console.log(`PURGE_ENABLED = ${PURGE_ENABLED ? "true" : "false"}`);
+  console.log(
+    `SELION_PURGE_ENABLED = ${SELION_PURGE_ENABLED ? "true" : "false"}`,
+  );
 
   const rawCandidates = await fetchPurgeCandidates();
 
@@ -203,11 +205,11 @@ async function main() {
   const { error: logError } = await supabase.from("robot_logs").insert({
     run_type: "purge",
     level: "info",
-    message: PURGE_ENABLED
+    message: SELION_PURGE_ENABLED
       ? `Purge prudente : ${toHide.length} prospect(s) à masquer`
       : `Purge prudente en mode simulation : ${toHide.length} prospect(s) seraient masqués`,
     details: {
-      purge_enabled: PURGE_ENABLED,
+      purge_enabled: SELION_PURGE_ENABLED,
       fetched: rawCandidates.length,
       to_hide: toHide.length,
       min_age_days: MIN_AGE_DAYS_BEFORE_HIDE,
@@ -225,9 +227,9 @@ async function main() {
     return;
   }
 
-  if (!PURGE_ENABLED) {
+  if (!SELION_PURGE_ENABLED) {
     console.log(
-      "Mode simulation : aucun prospect masqué. Pour activer, ajouter PURGE_ENABLED=true dans .env.local",
+      "Mode simulation : aucun prospect masque. Pour activer, ajouter SELION_PURGE_ENABLED=true dans .env.local",
     );
     return;
   }
@@ -242,7 +244,7 @@ async function main() {
     details: {
       candidates: toHide.length,
       hidden,
-      purge_enabled: PURGE_ENABLED,
+      purge_enabled: SELION_PURGE_ENABLED,
     },
   });
 

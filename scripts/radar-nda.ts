@@ -511,6 +511,7 @@ async function main() {
         total: extracted.length,
         detected_new: newOrganizations.length,
         inserted_new: rowsNew,
+        prospect_emails_sent: 0,
       },
     });
 
